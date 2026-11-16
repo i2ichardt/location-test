@@ -275,6 +275,17 @@ public class SettingsActivity extends Activity {
         placeList.setOrientation(LinearLayout.VERTICAL);
         LinearLayout body = form("Shared places", null);
         body.addView(hint("Saving a place sends it to the PC immediately. Other open phones refresh their list."));
+        final CheckBox names = new CheckBox(this);
+        names.setText("Show place names on the map");
+        names.setTextColor(0xFF1C1B19);
+        names.setChecked(Prefs.showPlaceNames(this));
+        names.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Prefs.setShowPlaceNames(SettingsActivity.this, names.isChecked());
+            }
+        });
+        body.addView(names);
         body.addView(placeList);
         Button add = textButton("Save where I am as a place", false);
         add.setOnClickListener(new View.OnClickListener() {

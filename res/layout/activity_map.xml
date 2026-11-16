@@ -176,15 +176,29 @@
             </ScrollView>
         </LinearLayout>
 
-        <Button
+        <LinearLayout
             android:id="@+id/peopleTab"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:background="@drawable/pill_dark"
-            android:stateListAnimator="@null"
-            android:text="People"
-            android:textAllCaps="false"
-            android:textColor="#F7F4EE"
-            android:textSize="15sp" />
+            android:layout_height="wrap_content"
+            android:background="@drawable/sheet_bg"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:paddingTop="8dp"
+            android:paddingBottom="10dp">
+
+            <View
+                android:layout_width="40dp"
+                android:layout_height="4dp"
+                android:background="@drawable/grabber" />
+
+            <TextView
+                android:id="@+id/peopleLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingTop="4dp"
+                android:text="People"
+                android:textColor="#5C584F"
+                android:textSize="12sp" />
+        </LinearLayout>
     </LinearLayout>
 </FrameLayout>

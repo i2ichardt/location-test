@@ -178,6 +178,7 @@ public class ShareService extends Service {
             json.put("lat", location.getLatitude());
             json.put("lon", location.getLongitude());
             json.put("ts", System.currentTimeMillis() / 1000L);
+            if (location.hasSpeed()) json.put("speed", location.getSpeed());
             Net.Result result = Net.post(base + "/send", json.toString());
             if (result.error == null && result.code >= 200 && result.code < 300) {
                 goForeground("Sharing with " + Prefs.group(this));

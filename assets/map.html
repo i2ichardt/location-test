@@ -51,6 +51,14 @@ function iconFor(person) {
       className: 'pin-icon'
     });
   }
+  if (person.waitImage) {
+    return L.divIcon({
+      className: '',
+      html: '<div style="width:36px;height:36px;border-radius:18px;background:transparent;border:2px solid rgba(26,25,22,0.28)"></div>',
+      iconSize: [36, 36],
+      iconAnchor: [18, 18]
+    });
+  }
   return L.divIcon({
     className: '',
     html: '<div style="width:36px;height:36px;border-radius:18px;background:#C8102E;color:#fff;text-align:center;line-height:36px;font-weight:700;border:2px solid #1A1916">' +
@@ -71,6 +79,7 @@ function setPeople(list) {
     var marker = markers[p.userId];
     if (!marker) {
       marker = L.marker([p.lat, p.lon], { icon: iconFor(p) });
+      marker._iconUrl = p.icon || '';
       marker.bindTooltip(p.name || 'Someone', { direction: 'top', offset: [0, -16] });
       (function (id) {
         marker.on('click', function () {
@@ -81,7 +90,14 @@ function setPeople(list) {
       markers[p.userId] = marker;
     } else {
       marker.setLatLng([p.lat, p.lon]);
-      marker.setIcon(iconFor(p));
+      if (p.icon) {
+        if (marker._iconUrl !== p.icon) {
+          marker.setIcon(iconFor(p));
+          marker._iconUrl = p.icon;
+        }
+      } else if (!marker._iconUrl) {
+        marker.setIcon(iconFor(p));
+      }
       marker.setTooltipContent(p.name || 'Someone');
     }
   }
@@ -95,6 +111,32 @@ function setPeople(list) {
     focused = true;
     if (bounds.length === 1) map.setView(bounds[0], 15);
     else map.fitBounds(bounds, { padding: [40, 40] });
+  }
+}
+
+var placeMarks = [];
+function setPlaces(list) {
+  placeMarks.forEach(function (m) { map.removeLayer(m); });
+  placeMarks = [];
+  if (!list) return;
+  for (var i = 0; i < list.length; i++) {
+    var p = list[i];
+    if (typeof p.lat !== 'number' || typeof p.lon !== 'number') continue;
+    var safe = String(p.name || 'Place').replace(/[&<>]/g, function (c) {
+      return c === '&' ? '&' : (c === '<' ? '<' : '>');
+    });
+    var mark = L.marker([p.lat, p.lon], {
+      interactive: false,
+      keyboard: false,
+      icon: L.divIcon({
+        className: '',
+        html: '<div style="display:inline-block;background:#F7F4EE;color:#1C1B19;border:1px solid #1A1916;border-radius:12px;padding:2px 8px;font-size:12px;font-weight:600;white-space:nowrap">' + safe + '</div>',
+        iconSize: [1, 1],
+        iconAnchor: [0, 12]
+      })
+    });
+    mark.addTo(map);
+    placeMarks.push(mark);
   }
 }
 

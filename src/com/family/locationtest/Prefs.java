@@ -106,6 +106,14 @@ public final class Prefs {
         return seconds(context, "fetchEvery", 15);
     }
 
+    public static boolean showPlaceNames(Context context) {
+        return sp(context).getBoolean("showPlaceNames", false);
+    }
+
+    public static void setShowPlaceNames(Context context, boolean on) {
+        sp(context).edit().putBoolean("showPlaceNames", on).apply();
+    }
+
     public static boolean notifyArrive(Context context, String placeId) {
         return sp(context).getBoolean("arrive:" + placeId, false);
     }

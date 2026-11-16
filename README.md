@@ -6,9 +6,9 @@ The server is [family-location-server](https://github.com/i2ichardt/family-locat
 
 ## Download and install
 
-The compiled app is on the [v2.3 release](https://github.com/i2ichardt/location-test/releases/tag/v2.3).
+The compiled app is on the [v2.4 release](https://github.com/i2ichardt/location-test/releases/tag/v2.4).
 
-[Download LocationTest.apk](https://github.com/i2ichardt/location-test/releases/download/v2.3/LocationTest.apk)
+[Download LocationTest.apk](https://github.com/i2ichardt/location-test/releases/download/v2.4/LocationTest.apk)
 
 The installed app is named **Family** (version 2.3). Android will ask you to allow installs from the browser.
 

@@ -11,6 +11,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.MotionEvent;
 import android.view.View;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
@@ -19,6 +20,7 @@ import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import java.io.File;
 import java.text.DateFormat;
 import java.util.Date;
 import java.util.HashMap;
@@ -30,12 +32,15 @@ public class MapActivity extends Activity {
     private TextView statusText;
     private LinearLayout sheet;
     private LinearLayout peopleList;
-    private Button peopleTab;
+    private View peopleTab;
+    private TextView peopleLabel;
     private LinearLayout personCard;
     private TextView cardName;
     private TextView cardArrived;
     private TextView cardStay;
     private JSONArray lastMembers = new JSONArray();
+    private String lastPlaces = "[]";
+    private String openCardId = "";
     private boolean pageReady;
     private boolean sheetOpen;
     private boolean satellite;
@@ -54,6 +59,7 @@ public class MapActivity extends Activity {
         sheet = findViewById(R.id.sheet);
         peopleList = findViewById(R.id.peopleList);
         peopleTab = findViewById(R.id.peopleTab);
+        peopleLabel = findViewById(R.id.peopleLabel);
         personCard = findViewById(R.id.personCard);
         cardName = findViewById(R.id.cardName);
         cardArrived = findViewById(R.id.cardArrived);
@@ -69,6 +75,7 @@ public class MapActivity extends Activity {
                 pageReady = true;
                 if (satellite) map.evaluateJavascript("setSatellite(true)", null);
                 pushMarkers();
+                pushPlaces();
             }
         });
         map.loadUrl("file:///android_asset/map.html");
@@ -79,11 +86,41 @@ public class MapActivity extends Activity {
                 startActivity(new Intent(MapActivity.this, SettingsActivity.class));
             }
         });
-        peopleTab.setOnClickListener(new View.OnClickListener() {
+        peopleTab.setOnTouchListener(new View.OnTouchListener() {
+            float downY;
             @Override
-            public void onClick(View v) {
-                sheetOpen = !sheetOpen;
-                sheet.setVisibility(sheetOpen ? View.VISIBLE : View.GONE);
+            public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                    downY = event.getRawY();
+                    return true;
+                }
+                if (event.getAction() == MotionEvent.ACTION_MOVE) {
+                    float dy = event.getRawY() - downY;
+                    if (!sheetOpen && dy < -dp(28)) setSheet(true);
+                    if (sheetOpen && dy > dp(28)) setSheet(false);
+                }
+                return true;
+            }
+        });
+        personCard.setOnTouchListener(new View.OnTouchListener() {
+            float downX;
+            float downY;
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                    downX = event.getRawX();
+                    downY = event.getRawY();
+                    return false;
+                }
+                if (event.getAction() == MotionEvent.ACTION_MOVE) {
+                    float dx = event.getRawX() - downX;
+                    float dy = event.getRawY() - downY;
+                    if (Math.abs(dx) > dp(64) && Math.abs(dx) > Math.abs(dy) * 1.4f) {
+                        hidePersonCard();
+                        return true;
+                    }
+                }
+                return false;
             }
         });
         findViewById(R.id.satelliteButton).setOnClickListener(new View.OnClickListener() {
@@ -156,7 +193,20 @@ public class MapActivity extends Activity {
             JSONArray members = body.optJSONArray("members");
             if (members == null) members = new JSONArray();
             JSONArray markers = new JSONArray();
+            JSONArray placePins = new JSONArray();
             int shown = 0;
+            JSONArray places = body.optJSONArray("places");
+            if (places != null && Prefs.showPlaceNames(this)) {
+                for (int i = 0; i < places.length(); i++) {
+                    JSONObject place = places.optJSONObject(i);
+                    if (place == null) continue;
+                    JSONObject pin = new JSONObject();
+                    pin.put("name", place.optString("name"));
+                    pin.put("lat", place.optDouble("lat"));
+                    pin.put("lon", place.optDouble("lon"));
+                    placePins.put(pin);
+                }
+            }
             for (int i = 0; i < members.length(); i++) {
                 JSONObject member = members.getJSONObject(i);
                 if (!member.optBoolean("hasLoc")) continue;
@@ -169,19 +219,29 @@ public class MapActivity extends Activity {
                 pin.put("lat", member.optDouble("lat"));
                 pin.put("lon", member.optDouble("lon"));
                 pin.put("letter", name.isEmpty() ? "?" : name.substring(0, 1).toUpperCase());
-                Long stamp = faceStamps.get(userId);
                 long imageTs = member.optLong("imageTs");
-                if (member.optBoolean("hasImage") && stamp != null && stamp.longValue() == imageTs && faces.containsKey(userId)) {
+                boolean hasImage = member.optBoolean("hasImage");
+                if (hasImage && ensureFace(userId, imageTs)) {
                     pin.put("icon", dataUrl(faces.get(userId)));
+                } else if (hasImage) {
+                    pin.put("waitImage", true);
                 }
                 markers.put(pin);
             }
             statusText.setText(label + " · " + shown + (shown == 1 ? " person" : " people"));
-            peopleTab.setText(sheetOpen ? "Hide people" : ("People · " + shown));
+            if (peopleLabel != null) peopleLabel.setText("People");
             lastMarkers = markers.toString();
+            lastPlaces = placePins.toString();
             lastMembers = members;
             pushMarkers();
+            pushPlaces();
             fillPeople(members);
+            if (!openCardId.isEmpty() && personCard.getVisibility() == View.VISIBLE) {
+                for (int i = 0; i < members.length(); i++) {
+                    JSONObject member = members.optJSONObject(i);
+                    if (member != null && openCardId.equals(member.optString("userId"))) bindPersonCard(member, false);
+                }
+            }
             fetchMissingFaces(members);
         } catch (Exception e) {
             statusText.setText(label + " · bad reply");
@@ -258,8 +318,7 @@ public class MapActivity extends Activity {
         Bitmap bitmap = BitmapFactory.decodeByteArray(result.raw, 0, result.raw.length);
         if (bitmap == null) return null;
         Bitmap small = Bitmap.createScaledBitmap(bitmap, 84, 84, true);
-        faces.put(userId, small);
-        faceStamps.put(userId, stamp);
+        rememberFace(userId, stamp, small);
         return dataUrl(small);
     }
 
@@ -272,6 +331,48 @@ public class MapActivity extends Activity {
     private void pushMarkers() {
         if (!pageReady) return;
         map.evaluateJavascript("setPeople(" + lastMarkers + ")", null);
+    }
+
+    private void pushPlaces() {
+        if (!pageReady) return;
+        map.evaluateJavascript("setPlaces(" + (Prefs.showPlaceNames(this) ? lastPlaces : "[]") + ")", null);
+    }
+
+    private void setSheet(boolean open) {
+        sheetOpen = open;
+        sheet.setVisibility(open ? View.VISIBLE : View.GONE);
+    }
+
+    private void hidePersonCard() {
+        openCardId = "";
+        personCard.setVisibility(View.GONE);
+    }
+
+    private File faceFile(String userId, long stamp) {
+        return new File(getCacheDir(), "face_" + userId.replaceAll("[^A-Za-z0-9_-]", "_") + "_" + stamp + ".jpg");
+    }
+
+    private void rememberFace(String userId, long stamp, Bitmap bitmap) {
+        faces.put(userId, bitmap);
+        faceStamps.put(userId, Long.valueOf(stamp));
+        try {
+            java.io.FileOutputStream out = new java.io.FileOutputStream(faceFile(userId, stamp));
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, out);
+            out.close();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private boolean ensureFace(String userId, long stamp) {
+        Long have = faceStamps.get(userId);
+        if (have != null && have.longValue() == stamp && faces.containsKey(userId)) return true;
+        File file = faceFile(userId, stamp);
+        if (!file.exists()) return false;
+        Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
+        if (bitmap == null) return false;
+        faces.put(userId, bitmap);
+        faceStamps.put(userId, Long.valueOf(stamp));
+        return true;
     }
 
     private void fillPeople(JSONArray members) {
@@ -287,68 +388,87 @@ public class MapActivity extends Activity {
         for (int i = 0; i < members.length(); i++) {
             JSONObject member = members.optJSONObject(i);
             if (member == null) continue;
-            peopleList.addView(personRow(member));
+            peopleList.addView(personBubble(member));
         }
     }
 
-    private View personRow(final JSONObject member) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(4, 8, 4, 8);
-        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+    private View personBubble(final JSONObject member) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackgroundResource(R.drawable.card_bg);
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        cardLp.bottomMargin = dp(10);
+        card.setLayoutParams(cardLp);
 
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(android.view.Gravity.CENTER_VERTICAL);
         ImageView face = new ImageView(this);
-        LinearLayout.LayoutParams faceLp = new LinearLayout.LayoutParams(dp(40), dp(40));
+        LinearLayout.LayoutParams faceLp = new LinearLayout.LayoutParams(dp(44), dp(44));
         face.setLayoutParams(faceLp);
         String userId = member.optString("userId");
         if (faces.containsKey(userId)) face.setImageBitmap(faces.get(userId));
-        else face.setBackgroundColor(0xFFC8102E);
-        row.addView(face);
+        else face.setBackgroundColor(0xFFE7E2D6);
+        top.addView(face);
 
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setPadding(dp(10), 0, 0, 0);
         TextView name = new TextView(this);
-        String label = member.optString("name", "Someone");
-        if (!member.optBoolean("hasLoc")) label = label + " · no pin yet";
-        name.setText(label);
-        name.setTextColor(0xFF1A1916);
-        name.setTextSize(16);
-        name.setPadding(dp(10), 0, dp(6), 0);
-        LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        name.setLayoutParams(nameLp);
+        name.setText(member.optString("name", "Someone"));
+        name.setTextColor(0xFF1C1B19);
+        name.setTextSize(17);
+        name.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        TextView line1 = new TextView(this);
+        TextView line2 = new TextView(this);
+        line1.setTextColor(0xFF5C584F);
+        line2.setTextColor(0xFF5C584F);
+        line1.setTextSize(14);
+        line2.setTextSize(14);
+        fillStatus(member, line1, line2);
+        words.addView(name);
+        words.addView(line1);
+        words.addView(line2);
+        top.addView(words);
+        card.addView(top);
+
         final double lat = member.optDouble("lat", Double.NaN);
         final double lon = member.optDouble("lon", Double.NaN);
         final boolean hasLoc = member.optBoolean("hasLoc");
-        name.setOnClickListener(new View.OnClickListener() {
+        final String phone = member.optString("phone", "");
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setPadding(0, dp(10), 0, 0);
+        if (hasLoc) actions.addView(wideButton("View", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                showPersonCard(member);
+                openStreet(lat, lon);
             }
-        });
-        row.addView(name);
+        }));
+        actions.addView(wideButton("Call", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!phone.isEmpty()) startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + phone)));
+            }
+        }));
+        actions.addView(wideButton("Text", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!phone.isEmpty()) startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("sms:" + phone)));
+            }
+        }));
+        card.addView(actions);
+        return card;
+    }
 
-        if (hasLoc) {
-            row.addView(smallButton("View", new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    openStreet(lat, lon);
-                }
-            }));
-        }
-        final String phone = member.optString("phone", "");
-        if (!phone.isEmpty()) {
-            row.addView(smallButton("Call", new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + phone)));
-                }
-            }));
-            row.addView(smallButton("Text", new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("sms:" + phone)));
-                }
-            }));
-        }
-        return row;
+    private Button wideButton(String text, View.OnClickListener click) {
+        Button button = smallButton(text, click);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+        lp.leftMargin = dp(4);
+        lp.rightMargin = dp(4);
+        button.setLayoutParams(lp);
+        return button;
     }
 
     private Button smallButton(String text, View.OnClickListener click) {
@@ -402,21 +522,47 @@ public class MapActivity extends Activity {
     }
 
     private void showPersonCard(final JSONObject member) {
-        String name = member.optString("name", "Someone");
-        cardName.setText(name);
-        if (!member.optBoolean("hasLoc")) {
-            cardArrived.setText("No location yet");
-            cardStay.setText("");
-        } else {
-            long arrived = member.optLong("arrived", member.optLong("ts"));
-            long now = System.currentTimeMillis() / 1000L;
-            long mins = arrived > 0 && now > arrived ? (now - arrived) / 60L : 0;
-            String when = DateFormat.getTimeInstance(DateFormat.SHORT).format(new Date(arrived * 1000L));
-            String area = member.optString("area", "");
-            if (area.isEmpty()) area = "this spot";
-            cardArrived.setText("Arrived " + when);
-            cardStay.setText(mins < 1 ? "Just arrived at " + area : "Here " + mins + " min at " + area);
+        String id = member.optString("userId");
+        if (id.equals(openCardId) && personCard.getVisibility() == View.VISIBLE) {
+            hidePersonCard();
+            return;
         }
+        openCardId = id;
+        bindPersonCard(member, true);
+    }
+
+    private void fillStatus(JSONObject member, TextView line1, TextView line2) {
+        if (!member.optBoolean("hasLoc")) {
+            line1.setText("No location yet");
+            line2.setText("");
+            line2.setVisibility(View.GONE);
+            return;
+        }
+        line2.setVisibility(View.VISIBLE);
+        long now = System.currentTimeMillis() / 1000L;
+        if (member.optBoolean("traveling")) {
+            int mph = (int) Math.round(member.optDouble("speed", 0) * 2.23694);
+            if (mph < 1) mph = 1;
+            long departed = member.optLong("departed", member.optLong("ts"));
+            long mins = departed > 0 && now > departed ? (now - departed) / 60L : 0;
+            String from = member.optString("departedFrom", "");
+            if (from.isEmpty()) from = "this spot";
+            line1.setText("Traveling at " + mph + " MPH");
+            line2.setText(mins < 1 ? "Departed from " + from + " - just now" : "Departed from " + from + " - " + mins + " mins ago");
+            return;
+        }
+        long arrived = member.optLong("arrived", member.optLong("ts"));
+        long mins = arrived > 0 && now > arrived ? (now - arrived) / 60L : 0;
+        String area = member.optString("area", "");
+        if (area.isEmpty()) area = "this spot";
+        line1.setText(mins < 1 ? "Arrived to " + area + " - just now" : "Arrived to " + area + " - " + mins + " mins ago");
+        line2.setText("");
+        line2.setVisibility(View.GONE);
+    }
+
+    private void bindPersonCard(final JSONObject member, boolean moveMap) {
+        cardName.setText(member.optString("name", "Someone"));
+        fillStatus(member, cardArrived, cardStay);
         final double lat = member.optDouble("lat", Double.NaN);
         final double lon = member.optDouble("lon", Double.NaN);
         final boolean hasLoc = member.optBoolean("hasLoc");
@@ -440,7 +586,7 @@ public class MapActivity extends Activity {
             }
         });
         personCard.setVisibility(View.VISIBLE);
-        if (hasLoc && pageReady) map.evaluateJavascript("showPerson(" + lat + "," + lon + ")", null);
+        if (moveMap && hasLoc && pageReady) map.evaluateJavascript("showPerson(" + lat + "," + lon + ")", null);
     }
 
     private class Bridge {
