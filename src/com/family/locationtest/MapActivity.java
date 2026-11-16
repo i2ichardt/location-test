@@ -31,18 +31,12 @@ public class MapActivity extends Activity {
     private Button peopleTab;
     private boolean pageReady;
     private boolean sheetOpen;
+    private boolean satellite;
     private String lastMarkers = "[]";
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final HashMap<String, Bitmap> faces = new HashMap<String, Bitmap>();
     private final HashMap<String, Long> faceStamps = new HashMap<String, Long>();
-
-    private final Runnable refresh = new Runnable() {
-        @Override
-        public void run() {
-            loadGroup();
-            handler.postDelayed(this, Prefs.fetchSeconds(MapActivity.this) * 1000L);
-        }
-    };
+    private final GroupWatch watch = new GroupWatch();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -62,6 +56,7 @@ public class MapActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 pageReady = true;
+                if (satellite) map.evaluateJavascript("setSatellite(true)", null);
                 pushMarkers();
             }
         });
@@ -80,21 +75,41 @@ public class MapActivity extends Activity {
                 sheet.setVisibility(sheetOpen ? View.VISIBLE : View.GONE);
             }
         });
+        findViewById(R.id.satelliteButton).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                satellite = !satellite;
+                ((Button) v).setText(satellite ? "Map" : "Satellite");
+                if (pageReady) map.evaluateJavascript("setSatellite(" + satellite + ")", null);
+            }
+        });
         askPermissions();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        Presence.mapOpen = true;
         Net.forgetRoute();
         if (hasLocation()) ShareService.start(this);
-        handler.removeCallbacks(refresh);
-        handler.post(refresh);
+        watch.start(this, new GroupWatch.Listener() {
+            @Override
+            public void onGroup(final String body) {
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        applyGroup(body);
+                    }
+                });
+            }
+        });
     }
 
     @Override
     protected void onPause() {
-        handler.removeCallbacks(refresh);
+        Presence.mapOpen = false;
+        watch.stop();
+        if (hasLocation()) ShareService.start(this);
         super.onPause();
     }
 
@@ -123,6 +138,73 @@ public class MapActivity extends Activity {
         if (hasLocation()) ShareService.start(this);
     }
 
+    private void applyGroup(String raw) {
+        final String label = Net.routeLabel(this);
+        try {
+            JSONObject body = new JSONObject(raw);
+            JSONArray members = body.optJSONArray("members");
+            if (members == null) members = new JSONArray();
+            JSONArray markers = new JSONArray();
+            int shown = 0;
+            for (int i = 0; i < members.length(); i++) {
+                JSONObject member = members.getJSONObject(i);
+                if (!member.optBoolean("hasLoc")) continue;
+                shown++;
+                JSONObject pin = new JSONObject();
+                String userId = member.optString("userId");
+                String name = member.optString("name", "Someone");
+                pin.put("userId", userId);
+                pin.put("name", name);
+                pin.put("lat", member.optDouble("lat"));
+                pin.put("lon", member.optDouble("lon"));
+                pin.put("letter", name.isEmpty() ? "?" : name.substring(0, 1).toUpperCase());
+                Long stamp = faceStamps.get(userId);
+                long imageTs = member.optLong("imageTs");
+                if (member.optBoolean("hasImage") && stamp != null && stamp.longValue() == imageTs && faces.containsKey(userId)) {
+                    pin.put("icon", dataUrl(faces.get(userId)));
+                }
+                markers.put(pin);
+            }
+            statusText.setText(label + " · " + shown + (shown == 1 ? " person" : " people"));
+            peopleTab.setText(sheetOpen ? "Hide people" : ("People · " + shown));
+            lastMarkers = markers.toString();
+            pushMarkers();
+            fillPeople(members);
+            fetchMissingFaces(members);
+        } catch (Exception e) {
+            statusText.setText(label + " · bad reply");
+        }
+    }
+
+    private void fetchMissingFaces(final JSONArray members) {
+        final String base = Net.base(this);
+        if (base.isEmpty()) return;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                boolean changed = false;
+                for (int i = 0; i < members.length(); i++) {
+                    JSONObject member = members.optJSONObject(i);
+                    if (member == null || !member.optBoolean("hasImage")) continue;
+                    String userId = member.optString("userId");
+                    long stamp = member.optLong("imageTs");
+                    Long have = faceStamps.get(userId);
+                    if (have != null && have.longValue() == stamp && faces.containsKey(userId)) continue;
+                    String icon = faceIcon(base, userId, stamp);
+                    if (icon != null) changed = true;
+                }
+                if (changed) {
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            loadGroup();
+                        }
+                    });
+                }
+            }
+        }).start();
+    }
+
     private void loadGroup() {
         final String base = Net.base(this);
         final String label = Net.routeLabel(this);
@@ -135,7 +217,6 @@ public class MapActivity extends Activity {
             public void run() {
                 Net.Result result = Net.get(base + "/group?groupId=" + Net.query(Prefs.group(MapActivity.this)));
                 if (result.error != null || result.code != 200) {
-                    final String err = result.error != null ? result.error : ("HTTP " + result.code);
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
@@ -144,52 +225,13 @@ public class MapActivity extends Activity {
                     });
                     return;
                 }
-                try {
-                    JSONObject body = new JSONObject(result.body);
-                    JSONArray members = body.optJSONArray("members");
-                    if (members == null) members = new JSONArray();
-                    JSONArray markers = new JSONArray();
-                    int shown = 0;
-                    for (int i = 0; i < members.length(); i++) {
-                        JSONObject member = members.getJSONObject(i);
-                        if (!member.optBoolean("hasLoc")) continue;
-                        shown++;
-                        JSONObject pin = new JSONObject();
-                        String userId = member.optString("userId");
-                        String name = member.optString("name", "Someone");
-                        pin.put("userId", userId);
-                        pin.put("name", name);
-                        pin.put("lat", member.optDouble("lat"));
-                        pin.put("lon", member.optDouble("lon"));
-                        pin.put("letter", name.isEmpty() ? "?" : name.substring(0, 1).toUpperCase());
-                        if (member.optBoolean("hasImage")) {
-                            long stamp = member.optLong("imageTs");
-                            String icon = faceIcon(base, userId, stamp);
-                            if (icon != null) pin.put("icon", icon);
-                        }
-                        markers.put(pin);
+                final String body = result.body;
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        applyGroup(body);
                     }
-                    final int count = shown;
-                    final String payload = markers.toString();
-                    final JSONArray people = members;
-                    handler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            statusText.setText(label + " · " + count + (count == 1 ? " person" : " people"));
-                            peopleTab.setText(sheetOpen ? "Hide people" : ("People · " + count));
-                            lastMarkers = payload;
-                            pushMarkers();
-                            fillPeople(people);
-                        }
-                    });
-                } catch (Exception e) {
-                    handler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            statusText.setText(label + " · bad reply");
-                        }
-                    });
-                }
+                });
             }
         }).start();
     }

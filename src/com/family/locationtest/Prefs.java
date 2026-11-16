@@ -67,6 +67,10 @@ public final class Prefs {
         return sp(context).getBoolean("share", true);
     }
 
+    public static boolean fast(Context context) {
+        return !"slow".equals(sp(context).getString("pace", "fast"));
+    }
+
     public static boolean onlyStopped(Context context) {
         return sp(context).getBoolean("stopped", false);
     }

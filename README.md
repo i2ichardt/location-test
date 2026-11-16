@@ -25,7 +25,19 @@ Open **Settings** from the map.
 - **Check the group every.** How often this phone reloads everyone else's pins.
 - **Update my pin only when I stop moving.** While you are walking or driving, the pin stays where you last stopped. When you stop, it sends the new spot.
 
+## Settings groups
+
+Settings is split into Connection, Sharing, Profile, and Shared places.
+
+- **Fast updates.** Every 30 seconds while moving, every 5 minutes while still.
+- **Slow updates.** Every 1–2 minutes while moving, every 15 minutes while still.
+- With the map open, pins refresh every few seconds. In the background they slow down. Low battery, weak GPS, or deep sleep can delay a pin by up to 30 minutes.
+- Saving a place sends it to the PC immediately. Other open phones refresh their place list right away.
+
 ## The map
+
+**Satellite** switches the map to aerial photos. Tap it again for the street map.
+
 
 The map is the whole screen. Your photo, and everyone else's, sits on the pin.
 

@@ -17,6 +17,19 @@
         android:padding="12dp">
 
         <Button
+            android:id="@+id/satelliteButton"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:layout_marginRight="8dp"
+            android:background="@drawable/btn_secondary"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:text="Satellite"
+            android:textAllCaps="false"
+            android:textColor="#1A1916"
+            android:textSize="15sp" />
+
+        <Button
             android:id="@+id/settingsButton"
             android:layout_width="wrap_content"
             android:layout_height="44dp"

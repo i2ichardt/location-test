@@ -15,10 +15,29 @@
 <script src="leaflet/leaflet.js"></script>
 <script>
 var map = L.map('map', { zoomControl: false }).setView([39.95, -75.16], 3);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+var streets = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
   attribution: '&copy; OpenStreetMap'
 }).addTo(map);
+var satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 19,
+  attribution: 'Tiles &copy; Esri'
+});
+var labels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 19,
+  pane: 'shadowPane'
+});
+function setSatellite(on) {
+  if (on) {
+    if (map.hasLayer(streets)) map.removeLayer(streets);
+    satellite.addTo(map);
+    labels.addTo(map);
+  } else {
+    if (map.hasLayer(satellite)) map.removeLayer(satellite);
+    if (map.hasLayer(labels)) map.removeLayer(labels);
+    streets.addTo(map);
+  }
+}
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 var markers = {};
 var focused = false;

@@ -30,16 +30,17 @@ public class SettingsActivity extends Activity {
     private EditText groupField;
     private EditText nameField;
     private EditText phoneField;
-    private EditText sendEvery;
-    private EditText fetchEvery;
     private CheckBox shareBox;
     private CheckBox stopBox;
     private RadioButton modeAuto;
     private RadioButton modeLan;
     private RadioButton modeTail;
+    private RadioButton paceFast;
+    private RadioButton paceSlow;
     private ImageView imagePreview;
     private LinearLayout placeList;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final GroupWatch watch = new GroupWatch();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -50,13 +51,13 @@ public class SettingsActivity extends Activity {
         groupField = findViewById(R.id.groupField);
         nameField = findViewById(R.id.nameField);
         phoneField = findViewById(R.id.phoneField);
-        sendEvery = findViewById(R.id.sendEvery);
-        fetchEvery = findViewById(R.id.fetchEvery);
         shareBox = findViewById(R.id.shareBox);
         stopBox = findViewById(R.id.stopBox);
         modeAuto = findViewById(R.id.modeAuto);
         modeLan = findViewById(R.id.modeLan);
         modeTail = findViewById(R.id.modeTail);
+        paceFast = findViewById(R.id.paceFast);
+        paceSlow = findViewById(R.id.paceSlow);
         imagePreview = findViewById(R.id.imagePreview);
         placeList = findViewById(R.id.placeList);
 
@@ -65,14 +66,14 @@ public class SettingsActivity extends Activity {
         groupField.setText(Prefs.group(this));
         nameField.setText(Prefs.name(this));
         phoneField.setText(Prefs.phone(this));
-        sendEvery.setText(String.valueOf(Prefs.sendSeconds(this)));
-        fetchEvery.setText(String.valueOf(Prefs.fetchSeconds(this)));
         shareBox.setChecked(Prefs.share(this));
         stopBox.setChecked(Prefs.onlyStopped(this));
         String mode = Prefs.mode(this);
         if ("lan".equals(mode)) modeLan.setChecked(true);
         else if ("tail".equals(mode)) modeTail.setChecked(true);
         else modeAuto.setChecked(true);
+        if (Prefs.fast(this)) paceFast.setChecked(true);
+        else paceSlow.setChecked(true);
         showSavedPhoto();
 
         findViewById(R.id.imageButton).setOnClickListener(new View.OnClickListener() {
@@ -100,6 +101,27 @@ public class SettingsActivity extends Activity {
             }
         });
         loadPlaces();
+        watch.start(this, new GroupWatch.Listener() {
+            @Override
+            public void onGroup(final String body) {
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            JSONObject json = new JSONObject(body);
+                            showPlaces(json.optJSONArray("places"));
+                        } catch (Exception ignored) {
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    @Override
+    protected void onDestroy() {
+        watch.stop();
+        super.onDestroy();
     }
 
     private void showSavedPhoto() {
@@ -135,8 +157,6 @@ public class SettingsActivity extends Activity {
     }
 
     private void saveLocal() {
-        int send = parseSeconds(sendEvery.getText().toString(), 30);
-        int fetch = parseSeconds(fetchEvery.getText().toString(), 15);
         String mode = "auto";
         if (modeLan.isChecked()) mode = "lan";
         if (modeTail.isChecked()) mode = "tail";
@@ -146,26 +166,14 @@ public class SettingsActivity extends Activity {
                 .putString("lan", Prefs.cleanUrl(lanField.getText().toString()))
                 .putString("tail", Prefs.cleanUrl(tailField.getText().toString()))
                 .putString("mode", mode)
+                .putString("pace", paceSlow.isChecked() ? "slow" : "fast")
                 .putString("group", group)
                 .putString("name", nameField.getText().toString().trim())
                 .putString("phone", phoneField.getText().toString().trim())
-                .putInt("sendEvery", send)
-                .putInt("fetchEvery", fetch)
                 .putBoolean("share", shareBox.isChecked())
                 .putBoolean("stopped", stopBox.isChecked())
                 .apply();
         Net.forgetRoute();
-    }
-
-    private int parseSeconds(String raw, int fallback) {
-        try {
-            int n = Integer.parseInt(raw.trim());
-            if (n < 10) return 10;
-            if (n > 3600) return 3600;
-            return n;
-        } catch (Exception e) {
-            return fallback;
-        }
     }
 
     private void uploadProfile() {

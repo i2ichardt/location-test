@@ -47,7 +47,7 @@ public class ShareService extends Service {
         @Override
         public void run() {
             pullGroup();
-            if (handler != null) handler.postDelayed(this, Prefs.fetchSeconds(ShareService.this) * 1000L);
+            if (handler != null) handler.postDelayed(this, fetchWait());
         }
     };
 
@@ -55,10 +55,7 @@ public class ShareService extends Service {
         @Override
         public void run() {
             if (lastFix != null) considerSend(lastFix);
-            if (handler != null) {
-                long wait = Prefs.onlyStopped(ShareService.this) ? 5000L : Prefs.sendSeconds(ShareService.this) * 1000L;
-                handler.postDelayed(this, wait);
-            }
+            if (handler != null) handler.postDelayed(this, sendWait());
         }
     };
 
@@ -113,7 +110,7 @@ public class ShareService extends Service {
             goForeground("Location permission is off");
             return;
         }
-        long interval = Prefs.onlyStopped(this) ? 5000L : Prefs.sendSeconds(this) * 1000L;
+        long interval = Presence.mapOpen ? 5000L : (Prefs.fast(this) ? 30000L : 60000L);
         try {
             if (locations.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 locations.requestLocationUpdates(LocationManager.GPS_PROVIDER, interval, 0f, listener, thread.getLooper());
@@ -149,12 +146,24 @@ public class ShareService extends Service {
             return;
         }
         long now = System.currentTimeMillis();
-        boolean due = lastSend == 0 || now - lastSend >= Prefs.sendSeconds(this) * 1000L;
+        long need = sendWait();
+        boolean due = lastSend == 0 || now - lastSend >= need;
         boolean justStopped = stoppedOnly && moving;
-        if (stoppedOnly && !justStopped && !due) return;
-        if (!stoppedOnly && !due) return;
+        if (!justStopped && !due) return;
         moving = false;
         if (postLocation(location)) lastSend = now;
+    }
+
+    private long sendWait() {
+        boolean movingNow = lastFix != null && lastFix.hasSpeed() && lastFix.getSpeed() > 0.8f;
+        if (Presence.mapOpen) return 5000L;
+        if (Prefs.fast(this)) return movingNow ? 30000L : 300000L;
+        return movingNow ? 90000L : 900000L;
+    }
+
+    private long fetchWait() {
+        if (Presence.mapOpen) return 15000L;
+        return Prefs.fast(this) ? 120000L : 900000L;
     }
 
     private boolean postLocation(Location location) {

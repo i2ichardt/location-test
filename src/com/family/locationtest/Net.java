@@ -63,6 +63,10 @@ public final class Net {
         return request("GET", url, null, 8000, false);
     }
 
+    public static Result getWait(String url) {
+        return request("GET", url, null, 25000, false);
+    }
+
     public static Result getBytes(String url) {
         return request("GET", url, null, 8000, true);
     }

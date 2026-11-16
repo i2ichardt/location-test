@@ -2,271 +2,346 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F3F1EB"
+    android:background="#F2F1F6"
     android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="18dp">
+        android:padding="16dp">
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingBottom="12dp"
+            android:paddingBottom="14dp"
             android:text="Settings"
             android:textColor="#1A1916"
             android:textSize="28sp"
             android:textStyle="bold" />
 
-        <CheckBox
-            android:id="@+id/shareBox"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Share my location"
-            android:textColor="#1A1916"
-            android:textSize="16sp" />
-
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingTop="12dp"
-            android:text="Home Wi-Fi address"
-            android:textColor="#5C584F"
+            android:paddingLeft="8dp"
+            android:paddingBottom="6dp"
+            android:text="Connection"
+            android:textColor="#6E6A64"
             android:textSize="13sp" />
-
-        <EditText
-            android:id="@+id/lanField"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@drawable/field_bg"
-            android:hint="http://192.168.1.5:8000"
-            android:inputType="textUri"
-            android:minHeight="48dp"
-            android:padding="12dp"
-            android:textColor="#1A1916"
-            android:textSize="16sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingTop="10dp"
-            android:text="Tailscale address"
-            android:textColor="#5C584F"
-            android:textSize="13sp" />
-
-        <EditText
-            android:id="@+id/tailField"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@drawable/field_bg"
-            android:hint="http://100.x.x.x:8000"
-            android:inputType="textUri"
-            android:minHeight="48dp"
-            android:padding="12dp"
-            android:textColor="#1A1916"
-            android:textSize="16sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingTop="8dp"
-            android:text="Auto tries the home address first. If the phone is not on that Wi-Fi, it uses Tailscale."
-            android:textColor="#5C584F"
-            android:textSize="13sp" />
-
-        <RadioGroup
-            android:id="@+id/modeGroup"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <RadioButton
-                android:id="@+id/modeAuto"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Auto"
-                android:textColor="#1A1916" />
-
-            <RadioButton
-                android:id="@+id/modeLan"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Home"
-                android:textColor="#1A1916" />
-
-            <RadioButton
-                android:id="@+id/modeTail"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Tailscale"
-                android:textColor="#1A1916" />
-        </RadioGroup>
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingTop="8dp"
-            android:text="Group name"
-            android:textColor="#5C584F"
-            android:textSize="13sp" />
-
-        <EditText
-            android:id="@+id/groupField"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@drawable/field_bg"
-            android:hint="Fam1"
-            android:inputType="text"
-            android:minHeight="48dp"
-            android:padding="12dp"
-            android:textColor="#1A1916"
-            android:textSize="16sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingTop="14dp"
-            android:paddingBottom="4dp"
-            android:text="Your profile"
-            android:textColor="#1A1916"
-            android:textSize="18sp"
-            android:textStyle="bold" />
-
-        <EditText
-            android:id="@+id/nameField"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:background="@drawable/field_bg"
-            android:hint="Name"
-            android:inputType="textPersonName"
-            android:minHeight="48dp"
-            android:padding="12dp"
-            android:textColor="#1A1916"
-            android:textSize="16sp" />
-
-        <EditText
-            android:id="@+id/phoneField"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:background="@drawable/field_bg"
-            android:hint="Phone number"
-            android:inputType="phone"
-            android:minHeight="48dp"
-            android:padding="12dp"
-            android:textColor="#1A1916"
-            android:textSize="16sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:background="@drawable/card_bg"
+            android:orientation="vertical"
+            android:padding="14dp">
 
-            <ImageView
-                android:id="@+id/imagePreview"
-                android:layout_width="64dp"
-                android:layout_height="64dp"
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Home Wi-Fi"
+                android:textColor="#1A1916"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="6dp"
+                android:text="The address shown on the PC, with :8000"
+                android:textColor="#6E6A64"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/lanField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:background="@drawable/field_bg"
-                android:scaleType="centerCrop" />
+                android:hint="http://192.168.1.5:8000"
+                android:inputType="textUri"
+                android:minHeight="48dp"
+                android:padding="12dp"
+                android:textColor="#1A1916"
+                android:textSize="16sp" />
 
-            <Button
-                android:id="@+id/imageButton"
-                android:layout_width="wrap_content"
-                android:layout_height="44dp"
-                android:layout_marginLeft="12dp"
-                android:background="@drawable/btn_secondary"
-                android:paddingLeft="14dp"
-                android:paddingRight="14dp"
-                android:text="Choose photo"
-                android:textAllCaps="false"
-                android:textColor="#1A1916" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="12dp"
+                android:text="Tailscale"
+                android:textColor="#1A1916"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="6dp"
+                android:text="Used when the phone is off the home Wi-Fi"
+                android:textColor="#6E6A64"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/tailField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/field_bg"
+                android:hint="http://100.x.x.x:8000"
+                android:inputType="textUri"
+                android:minHeight="48dp"
+                android:padding="12dp"
+                android:textColor="#1A1916"
+                android:textSize="16sp" />
+
+            <RadioGroup
+                android:id="@+id/modeGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="8dp">
+
+                <RadioButton
+                    android:id="@+id/modeAuto"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Auto — home first, then Tailscale"
+                    android:textColor="#1A1916" />
+
+                <RadioButton
+                    android:id="@+id/modeLan"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Always use home"
+                    android:textColor="#1A1916" />
+
+                <RadioButton
+                    android:id="@+id/modeTail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Always use Tailscale"
+                    android:textColor="#1A1916" />
+            </RadioGroup>
         </LinearLayout>
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingTop="14dp"
-            android:text="Send my location every (seconds)"
-            android:textColor="#5C584F"
-            android:textSize="13sp" />
-
-        <EditText
-            android:id="@+id/sendEvery"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@drawable/field_bg"
-            android:inputType="number"
-            android:minHeight="48dp"
-            android:padding="12dp"
-            android:text="30"
-            android:textColor="#1A1916"
-            android:textSize="16sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingTop="8dp"
-            android:text="Check the group every (seconds)"
-            android:textColor="#5C584F"
-            android:textSize="13sp" />
-
-        <EditText
-            android:id="@+id/fetchEvery"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@drawable/field_bg"
-            android:inputType="number"
-            android:minHeight="48dp"
-            android:padding="12dp"
-            android:text="15"
-            android:textColor="#1A1916"
-            android:textSize="16sp" />
-
-        <CheckBox
-            android:id="@+id/stopBox"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Update my pin only when I stop moving"
-            android:textColor="#1A1916"
-            android:textSize="16sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingTop="14dp"
-            android:paddingBottom="4dp"
-            android:text="Shared places"
-            android:textColor="#1A1916"
-            android:textSize="18sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingBottom="8dp"
-            android:text="Places are shared with the group. The arrive and leave alerts are only for this phone."
-            android:textColor="#5C584F"
+            android:paddingLeft="8dp"
+            android:paddingTop="16dp"
+            android:paddingBottom="6dp"
+            android:text="Sharing"
+            android:textColor="#6E6A64"
             android:textSize="13sp" />
 
         <LinearLayout
-            android:id="@+id/placeList"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical" />
+            android:background="@drawable/card_bg"
+            android:orientation="vertical"
+            android:padding="14dp">
 
-        <Button
-            android:id="@+id/addPlace"
+            <CheckBox
+                android:id="@+id/shareBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Share my location"
+                android:textColor="#1A1916"
+                android:textSize="16sp" />
+
+            <RadioGroup
+                android:id="@+id/paceGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <RadioButton
+                    android:id="@+id/paceFast"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Fast updates"
+                    android:textColor="#1A1916"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingLeft="32dp"
+                    android:paddingBottom="8dp"
+                    android:text="Every 30 seconds while moving, every 5 minutes while stationary."
+                    android:textColor="#6E6A64"
+                    android:textSize="13sp" />
+
+                <RadioButton
+                    android:id="@+id/paceSlow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Slow updates"
+                    android:textColor="#1A1916"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingLeft="32dp"
+                    android:text="Every 1–2 minutes while moving, every 15 minutes while stationary."
+                    android:textColor="#6E6A64"
+                    android:textSize="13sp" />
+            </RadioGroup>
+
+            <CheckBox
+                android:id="@+id/stopBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Update my pin only when I stop moving"
+                android:textColor="#1A1916"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="8dp"
+                android:text="With the map open, updates are every few seconds. In the background they slow to 2–15 minutes, following Fast or Slow. Low battery, a weak GPS or Wi-Fi signal, or deep sleep can delay a pin by up to 30 minutes."
+                android:textColor="#6E6A64"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <TextView
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginTop="8dp"
-            android:background="@drawable/btn_secondary"
-            android:text="Save where I am as a place"
-            android:textAllCaps="false"
-            android:textColor="#1A1916" />
+            android:layout_height="wrap_content"
+            android:paddingLeft="8dp"
+            android:paddingTop="16dp"
+            android:paddingBottom="6dp"
+            android:text="Profile"
+            android:textColor="#6E6A64"
+            android:textSize="13sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/card_bg"
+            android:orientation="vertical"
+            android:padding="14dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Group name"
+                android:textColor="#1A1916"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="6dp"
+                android:text="Everyone who should see each other uses the same name"
+                android:textColor="#6E6A64"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/groupField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:background="@drawable/field_bg"
+                android:hint="Fam1"
+                android:inputType="text"
+                android:minHeight="48dp"
+                android:padding="12dp"
+                android:textColor="#1A1916"
+                android:textSize="16sp" />
+
+            <EditText
+                android:id="@+id/nameField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:background="@drawable/field_bg"
+                android:hint="Name"
+                android:inputType="textPersonName"
+                android:minHeight="48dp"
+                android:padding="12dp"
+                android:textColor="#1A1916"
+                android:textSize="16sp" />
+
+            <EditText
+                android:id="@+id/phoneField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:background="@drawable/field_bg"
+                android:hint="Phone number"
+                android:inputType="phone"
+                android:minHeight="48dp"
+                android:padding="12dp"
+                android:textColor="#1A1916"
+                android:textSize="16sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:id="@+id/imagePreview"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:background="@drawable/field_bg"
+                    android:scaleType="centerCrop" />
+
+                <Button
+                    android:id="@+id/imageButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_marginLeft="12dp"
+                    android:background="@drawable/btn_secondary"
+                    android:paddingLeft="14dp"
+                    android:paddingRight="14dp"
+                    android:text="Choose photo"
+                    android:textAllCaps="false"
+                    android:textColor="#1A1916" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingLeft="8dp"
+            android:paddingTop="16dp"
+            android:paddingBottom="6dp"
+            android:text="Shared places"
+            android:textColor="#6E6A64"
+            android:textSize="13sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/card_bg"
+            android:orientation="vertical"
+            android:padding="14dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="8dp"
+                android:text="Saving a place sends it to the PC immediately. Other phones in the group refresh their list as soon as the app is open."
+                android:textColor="#6E6A64"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:id="@+id/placeList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <Button
+                android:id="@+id/addPlace"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/btn_secondary"
+                android:text="Save where I am as a place"
+                android:textAllCaps="false"
+                android:textColor="#1A1916" />
+        </LinearLayout>
 
         <Button
             android:id="@+id/saveButton"
