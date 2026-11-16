@@ -67,8 +67,24 @@ public final class Prefs {
         return sp(context).getBoolean("share", true);
     }
 
+    public static String pace(Context context) {
+        String pace = sp(context).getString("pace", "fast");
+        if (pace == null || pace.isEmpty()) return "fast";
+        return pace;
+    }
+
     public static boolean fast(Context context) {
-        return !"slow".equals(sp(context).getString("pace", "fast"));
+        return "fast".equals(pace(context));
+    }
+
+    public static long customMillis(Context context) {
+        int n = sp(context).getInt("customEvery", 30);
+        if (n < 1) n = 1;
+        if (n > 999) n = 999;
+        long ms = "min".equals(sp(context).getString("customUnit", "sec")) ? n * 60000L : n * 1000L;
+        if (ms < 5000L) ms = 5000L;
+        if (ms > 3600000L) ms = 3600000L;
+        return ms;
     }
 
     public static boolean onlyStopped(Context context) {

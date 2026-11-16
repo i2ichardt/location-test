@@ -19,6 +19,8 @@ import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import java.text.DateFormat;
+import java.util.Date;
 import java.util.HashMap;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -29,6 +31,11 @@ public class MapActivity extends Activity {
     private LinearLayout sheet;
     private LinearLayout peopleList;
     private Button peopleTab;
+    private LinearLayout personCard;
+    private TextView cardName;
+    private TextView cardArrived;
+    private TextView cardStay;
+    private JSONArray lastMembers = new JSONArray();
     private boolean pageReady;
     private boolean sheetOpen;
     private boolean satellite;
@@ -47,6 +54,10 @@ public class MapActivity extends Activity {
         sheet = findViewById(R.id.sheet);
         peopleList = findViewById(R.id.peopleList);
         peopleTab = findViewById(R.id.peopleTab);
+        personCard = findViewById(R.id.personCard);
+        cardName = findViewById(R.id.cardName);
+        cardArrived = findViewById(R.id.cardArrived);
+        cardStay = findViewById(R.id.cardStay);
 
         map.getSettings().setJavaScriptEnabled(true);
         map.getSettings().setDomStorageEnabled(true);
@@ -168,6 +179,7 @@ public class MapActivity extends Activity {
             statusText.setText(label + " · " + shown + (shown == 1 ? " person" : " people"));
             peopleTab.setText(sheetOpen ? "Hide people" : ("People · " + shown));
             lastMarkers = markers.toString();
+            lastMembers = members;
             pushMarkers();
             fillPeople(members);
             fetchMissingFaces(members);
@@ -308,7 +320,7 @@ public class MapActivity extends Activity {
         name.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (hasLoc) openStreet(lat, lon);
+                showPersonCard(member);
             }
         });
         row.addView(name);
@@ -320,12 +332,6 @@ public class MapActivity extends Activity {
                     openStreet(lat, lon);
                 }
             }));
-            row.addView(smallButton("Trip", new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    openTrip(lat, lon);
-                }
-            }));
         }
         final String phone = member.optString("phone", "");
         if (!phone.isEmpty()) {
@@ -333,6 +339,12 @@ public class MapActivity extends Activity {
                 @Override
                 public void onClick(View v) {
                     startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + phone)));
+                }
+            }));
+            row.addView(smallButton("Text", new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("sms:" + phone)));
                 }
             }));
         }
@@ -345,7 +357,8 @@ public class MapActivity extends Activity {
         button.setAllCaps(false);
         button.setTextColor(0xFF1A1916);
         button.setTextSize(13);
-        button.setBackgroundColor(0xFFE4DDD0);
+        button.setBackgroundResource(R.drawable.pill_light);
+        button.setStateListAnimator(null);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(36));
         lp.leftMargin = dp(4);
         button.setLayoutParams(lp);
@@ -379,17 +392,55 @@ public class MapActivity extends Activity {
     }
 
     private void openPerson(String userId) {
-        try {
-            JSONArray list = new JSONArray(lastMarkers);
-            for (int i = 0; i < list.length(); i++) {
-                JSONObject pin = list.getJSONObject(i);
-                if (userId.equals(pin.optString("userId"))) {
-                    openStreet(pin.optDouble("lat"), pin.optDouble("lon"));
-                    return;
-                }
+        for (int i = 0; i < lastMembers.length(); i++) {
+            JSONObject member = lastMembers.optJSONObject(i);
+            if (member != null && userId.equals(member.optString("userId"))) {
+                showPersonCard(member);
+                return;
             }
-        } catch (Exception ignored) {
         }
+    }
+
+    private void showPersonCard(final JSONObject member) {
+        String name = member.optString("name", "Someone");
+        cardName.setText(name);
+        if (!member.optBoolean("hasLoc")) {
+            cardArrived.setText("No location yet");
+            cardStay.setText("");
+        } else {
+            long arrived = member.optLong("arrived", member.optLong("ts"));
+            long now = System.currentTimeMillis() / 1000L;
+            long mins = arrived > 0 && now > arrived ? (now - arrived) / 60L : 0;
+            String when = DateFormat.getTimeInstance(DateFormat.SHORT).format(new Date(arrived * 1000L));
+            String area = member.optString("area", "");
+            if (area.isEmpty()) area = "this spot";
+            cardArrived.setText("Arrived " + when);
+            cardStay.setText(mins < 1 ? "Just arrived at " + area : "Here " + mins + " min at " + area);
+        }
+        final double lat = member.optDouble("lat", Double.NaN);
+        final double lon = member.optDouble("lon", Double.NaN);
+        final boolean hasLoc = member.optBoolean("hasLoc");
+        final String phone = member.optString("phone", "");
+        findViewById(R.id.cardView).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (hasLoc) openStreet(lat, lon);
+            }
+        });
+        findViewById(R.id.cardCall).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!phone.isEmpty()) startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + phone)));
+            }
+        });
+        findViewById(R.id.cardText).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!phone.isEmpty()) startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("sms:" + phone)));
+            }
+        });
+        personCard.setVisibility(View.VISIBLE);
+        if (hasLoc && pageReady) map.evaluateJavascript("showPerson(" + lat + "," + lon + ")", null);
     }
 
     private class Bridge {

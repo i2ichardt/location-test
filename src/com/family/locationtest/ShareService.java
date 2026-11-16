@@ -110,7 +110,7 @@ public class ShareService extends Service {
             goForeground("Location permission is off");
             return;
         }
-        long interval = Presence.mapOpen ? 5000L : (Prefs.fast(this) ? 30000L : 60000L);
+        long interval = sendWait();
         try {
             if (locations.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 locations.requestLocationUpdates(LocationManager.GPS_PROVIDER, interval, 0f, listener, thread.getLooper());
@@ -155,6 +155,7 @@ public class ShareService extends Service {
     }
 
     private long sendWait() {
+        if ("custom".equals(Prefs.pace(this))) return Prefs.customMillis(this);
         boolean movingNow = lastFix != null && lastFix.hasSpeed() && lastFix.getSpeed() > 0.8f;
         if (Presence.mapOpen) return 5000L;
         if (Prefs.fast(this)) return movingNow ? 30000L : 300000L;
@@ -162,6 +163,7 @@ public class ShareService extends Service {
     }
 
     private long fetchWait() {
+        if ("custom".equals(Prefs.pace(this))) return Prefs.customMillis(this);
         if (Presence.mapOpen) return 15000L;
         return Prefs.fast(this) ? 120000L : 900000L;
     }

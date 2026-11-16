@@ -8,6 +8,7 @@
   html, body, #map { height: 100%; margin: 0; background: #e7e2d6; }
   .leaflet-container { font-family: sans-serif; }
   .pin-icon { border-radius: 50%; border: 2px solid #1A1916; background: #F4F1EA; }
+  .leaflet-control-zoom { display: none !important; }
 </style>
 </head>
 <body>
@@ -38,7 +39,6 @@ function setSatellite(on) {
     streets.addTo(map);
   }
 }
-L.control.zoom({ position: 'bottomright' }).addTo(map);
 var markers = {};
 var focused = false;
 

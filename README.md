@@ -8,44 +8,41 @@ The server is [family-location-server](https://github.com/i2ichardt/family-locat
 
 [Download LocationTest.apk](https://github.com/i2ichardt/location-test/raw/main/LocationTest.apk)
 
-The installed app is named **Family**. Android will ask you to allow installs from the browser.
+The installed app is named **Family** (version 2.3). Android will ask you to allow installs from the browser.
 
 Allow location when the app asks. Sharing keeps a small notification so Android does not stop the updates.
 
 ## Settings
 
-Open **Settings** from the map.
+Settings opens to a category menu, not one long page:
 
-- **Home Wi-Fi address.** The PC's LAN address, from `ipconfig`. Example: `http://192.168.1.5:8000`
-- **Tailscale address.** The PC's `100.x` address, from `tailscale ip -4`, or its MagicDNS name. Example: `http://100.64.1.2:8000`
-- **Auto, Home, or Tailscale.** Auto tries the home address. If that PC is not reachable, it uses Tailscale. That matches being on the same Wi-Fi versus being on mobile data.
-- **Group name.** Every phone that should see each other uses the same name.
-- **Your profile.** Name, phone number, and a photo. The photo is the pin on the map. Save sends it to the PC.
-- **Send my location every.** How often your pin is updated. 30 seconds is the start.
-- **Check the group every.** How often this phone reloads everyone else's pins.
-- **Update my pin only when I stop moving.** While you are walking or driving, the pin stays where you last stopped. When you stop, it sends the new spot.
+- **Connection.** Home address, Tailscale address, and which one to use.
+- **Sharing.** How often your pin is sent, including a custom time.
+- **Group.** The name everyone in the family uses. This is separate from your profile.
+- **Profile.** Your name, phone number, and photo.
+- **Shared places.** Places the group can see, and alerts for this phone.
 
-## Settings groups
+**Back** returns to that menu without saving. **Close** on the menu leaves Settings without saving. Android's back button does the same: a category goes back to the menu, and the menu closes Settings.
 
-Settings is split into Connection, Sharing, Profile, and Shared places.
+**Save** is at the bottom of Connection, Sharing, Group, and Profile. It commits only that page, then returns to the menu. Shared places has no Save button; a place is sent as soon as you save it with its own button.
 
-- **Fast updates.** Every 30 seconds while moving, every 5 minutes while still.
-- **Slow updates.** Every 1–2 minutes while moving, every 15 minutes while still.
-- With the map open, pins refresh every few seconds. In the background they slow down. Low battery, weak GPS, or deep sleep can delay a pin by up to 30 minutes.
-- Saving a place sends it to the PC immediately. Other open phones refresh their place list right away.
+The phone field formats as you type. You only enter digits. A US number becomes `111-111-1111`.
+
+Sharing is **Fast**, **Slow**, or **Custom**. Custom is a number plus **Seconds** or **Minutes**. Fast is every 30 seconds while moving and every 5 minutes while still. Slow is every 1–2 minutes while moving and every 15 minutes while still. With the map open, Fast and Slow refresh every few seconds. Custom uses the time you set for both sending your pin and fetching the group, including while the map is open. Low battery, weak GPS, or deep sleep can delay a pin by up to 30 minutes.
+
+You can also turn sharing off, or update the pin only when you stop moving.
 
 ## The map
 
-**Satellite** switches the map to aerial photos. Tap it again for the street map.
+The map is the whole screen. Pinch to zoom. There are no +/- buttons.
 
+Your photo, and everyone else's, sits on the pin. **Satellite** switches to aerial photos. Tap it again for the street map.
 
-The map is the whole screen. Your photo, and everyone else's, sits on the pin.
+**People** is a bar at the bottom and stays collapsed until you tap it. Rows can still have **View**, **Call**, and **Text**.
 
-**People** is a bar at the bottom. Tap it to open the group. Tap a name, or **View**, for a Street View of where they are. **Call** opens the phone dialer. **Trip** opens Google Maps directions to them. Tap the bar again to hide the list.
+Tapping a person pin does not open Street View immediately. It shows a card with their name, when they arrived, and how long they have been at that area (or "this spot"), plus **View**, **Call**, and **Text**. **View** opens the Google panorama. **Call** opens the phone dialer. **Text** opens a message.
 
-Tap a pin on the map for the same Street View.
-
-The map tiles are OpenStreetMap. Street View and directions open Google Maps, so no Maps key is stored in the app.
+The map tiles are OpenStreetMap. Street View opens Google Maps, so no Maps key is stored in the app.
 
 ## Shared places
 
