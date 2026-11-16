@@ -25,42 +25,34 @@ public class SwipeCard extends LinearLayout {
     }
 
     @Override
-    public boolean onInterceptTouchEvent(MotionEvent event) {
-        if (event.getAction() == MotionEvent.ACTION_DOWN) {
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        int action = event.getAction();
+        if (action == MotionEvent.ACTION_DOWN) {
             downX = event.getRawX();
             downY = event.getRawY();
             tracking = true;
             dragging = false;
-            return false;
-        }
-        if (event.getAction() == MotionEvent.ACTION_MOVE && tracking) {
+            animate().cancel();
+        } else if (action == MotionEvent.ACTION_MOVE && tracking) {
             float dx = event.getRawX() - downX;
             float dy = event.getRawY() - downY;
-            if (Math.abs(dx) > dp(18) && Math.abs(dx) > Math.abs(dy)) {
+            if (!dragging && Math.abs(dx) > dp(16) && Math.abs(dx) > Math.abs(dy)) {
                 dragging = true;
-                if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
-                return true;
+                MotionEvent cancel = MotionEvent.obtain(event);
+                cancel.setAction(MotionEvent.ACTION_CANCEL);
+                super.dispatchTouchEvent(cancel);
+                cancel.recycle();
             }
-        }
-        if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) tracking = false;
-        return false;
-    }
-
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
-        if (event.getAction() == MotionEvent.ACTION_MOVE && (dragging || tracking)) {
-            float dx = event.getRawX() - downX;
-            float dy = event.getRawY() - downY;
-            if (!dragging && Math.abs(dx) > dp(18) && Math.abs(dx) > Math.abs(dy)) dragging = true;
             if (dragging) {
                 setTranslationX(dx);
                 return true;
             }
-        }
-        if ((event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) && dragging) {
+        } else if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) && dragging) {
             float dx = getTranslationX();
+            tracking = false;
+            dragging = false;
             if (Math.abs(dx) > getWidth() * 0.28f) {
-                float away = dx < 0 ? -getWidth() : getWidth();
+                float away = dx < 0 ? -getWidth() - dp(24) : getWidth() + dp(24);
                 animate().translationX(away).setDuration(140).withEndAction(new Runnable() {
                     @Override
                     public void run() {
@@ -71,11 +63,9 @@ public class SwipeCard extends LinearLayout {
             } else {
                 animate().translationX(0).setDuration(140).start();
             }
-            dragging = false;
-            tracking = false;
             return true;
         }
-        return super.onTouchEvent(event);
+        return super.dispatchTouchEvent(event);
     }
 
     private int dp(int value) {

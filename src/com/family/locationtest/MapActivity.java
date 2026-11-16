@@ -1,5 +1,6 @@
 package com.family.locationtest;
 
+import android.animation.ValueAnimator;
 import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
@@ -12,6 +13,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.MotionEvent;
+import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
@@ -45,7 +47,11 @@ public class MapActivity extends Activity {
     private boolean pageReady;
     private boolean sheetOpen;
     private boolean curtainDrag;
+    private boolean curtainAnimating;
+    private boolean curtainWaiting;
     private float curtainClosed;
+    private float curtainY = -1f;
+    private int laidSheetHeight;
     private boolean satellite;
     private String lastMarkers = "[]";
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -101,26 +107,50 @@ public class MapActivity extends Activity {
         peopleTab.setOnTouchListener(new View.OnTouchListener() {
             float anchorY;
             float anchorTy;
+            VelocityTracker velocity;
+
             @Override
             public boolean onTouch(View v, MotionEvent event) {
-                if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                int action = event.getAction();
+                if (action == MotionEvent.ACTION_DOWN) {
                     curtainDrag = true;
+                    curtainAnimating = false;
                     sheet.animate().cancel();
                     anchorY = event.getRawY();
                     anchorTy = sheet.getTranslationY();
+                    if (velocity != null) velocity.recycle();
+                    velocity = VelocityTracker.obtain();
+                    velocity.addMovement(event);
                     return true;
                 }
-                if (event.getAction() == MotionEvent.ACTION_MOVE) {
+                if (action == MotionEvent.ACTION_MOVE) {
+                    if (velocity != null) velocity.addMovement(event);
                     float next = anchorTy + (event.getRawY() - anchorY);
                     if (next < 0) next = 0;
                     if (next > curtainClosed) next = curtainClosed;
+                    curtainY = next;
                     sheet.setTranslationY(next);
+                    followCurtain();
                     return true;
                 }
-                if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    float vy = 0;
+                    if (velocity != null) {
+                        velocity.addMovement(event);
+                        velocity.computeCurrentVelocity(1000);
+                        vy = velocity.getYVelocity();
+                        velocity.recycle();
+                        velocity = null;
+                    }
                     curtainDrag = false;
-                    sheetOpen = sheet.getTranslationY() < curtainClosed * 0.5f;
-                    sheet.animate().translationY(sheetOpen ? 0 : curtainClosed).setDuration(180).start();
+                    float y = sheet.getTranslationY();
+                    float target = y;
+                    if (vy < -1400) target = 0;
+                    else if (vy > 1400) target = curtainClosed;
+                    else if (y < dp(24)) target = 0;
+                    else if (curtainClosed - y < dp(24)) target = curtainClosed;
+                    sheetOpen = target < curtainClosed * 0.5f;
+                    slideCurtain(target, target == y ? 0 : 160);
                     return true;
                 }
                 return true;
@@ -133,6 +163,12 @@ public class MapActivity extends Activity {
                 Prefs.setSatellite(MapActivity.this, satellite);
                 satelliteButton.setText(satellite ? "Map" : "Satellite");
                 if (pageReady) map.evaluateJavascript("setSatellite(" + satellite + ")", null);
+            }
+        });
+        sheet.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int left, int top, int right, int bottom, int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                if (bottom - top != oldBottom - oldTop) placeCurtain(false);
             }
         });
         sheet.post(new Runnable() {
@@ -149,6 +185,9 @@ public class MapActivity extends Activity {
         super.onResume();
         Presence.mapOpen = true;
         Net.forgetRoute();
+        satellite = Prefs.satellite(this);
+        ((Button) findViewById(R.id.satelliteButton)).setText(satellite ? "Map" : "Satellite");
+        if (pageReady) map.evaluateJavascript("setSatellite(" + satellite + ")", null);
         if (hasLocation()) ShareService.start(this);
         watch.start(this, new GroupWatch.Listener() {
             @Override
@@ -347,19 +386,69 @@ public class MapActivity extends Activity {
         map.evaluateJavascript("setPlaces(" + (Prefs.showPlaceNames(this) ? lastPlaces : "[]") + ")", null);
     }
 
-    private void setSheet(boolean open) {
-        sheetOpen = open;
-        placeCurtain(true);
-    }
-
     private void placeCurtain(boolean animate) {
-        int closed = sheet.getHeight() - peopleTab.getHeight();
+        int handle = peopleTab.getHeight();
+        if (handle <= 0 || sheet.getHeight() <= 0) {
+            if (!curtainWaiting) {
+                curtainWaiting = true;
+                sheet.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        curtainWaiting = false;
+                        placeCurtain(false);
+                    }
+                });
+            }
+            return;
+        }
+        int closed = sheet.getHeight() - handle;
         if (closed < 0) closed = 0;
         curtainClosed = closed;
-        if (curtainDrag) return;
-        float target = sheetOpen ? 0 : curtainClosed;
-        if (animate) sheet.animate().translationY(target).setDuration(180).start();
-        else sheet.setTranslationY(target);
+        if (curtainDrag || curtainAnimating) return;
+        int height = sheet.getHeight();
+        if (curtainY < 0) curtainY = closed;
+        else if (laidSheetHeight > 0 && height != laidSheetHeight) {
+            float visible = laidSheetHeight - curtainY;
+            curtainY = height - visible;
+        }
+        laidSheetHeight = height;
+        if (curtainY < 0) curtainY = 0;
+        if (curtainY > closed) curtainY = closed;
+        if (animate) slideCurtain(curtainY, 180);
+        else if (Math.abs(sheet.getTranslationY() - curtainY) > 0.5f) {
+            sheet.setTranslationY(curtainY);
+            followCurtain();
+        }
+    }
+
+    private void slideCurtain(final float target, long duration) {
+        curtainY = target;
+        if (duration <= 0 || Math.abs(sheet.getTranslationY() - target) < 1f) {
+            curtainAnimating = false;
+            sheet.setTranslationY(target);
+            followCurtain();
+            return;
+        }
+        curtainAnimating = true;
+        sheet.animate().translationY(target).setDuration(duration).setUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator animation) {
+                followCurtain();
+            }
+        }).withEndAction(new Runnable() {
+            @Override
+            public void run() {
+                curtainAnimating = false;
+                followCurtain();
+            }
+        }).start();
+    }
+
+    private void followCurtain() {
+        if (personCard.getVisibility() != View.VISIBLE) return;
+        float visible = sheet.getHeight() - sheet.getTranslationY();
+        if (visible < 0) visible = 0;
+        personCard.setTranslationY(-(visible + dp(8)));
     }
 
     private void fitPeopleScroll() {
@@ -635,6 +724,7 @@ public class MapActivity extends Activity {
             }
         });
         personCard.setVisibility(View.VISIBLE);
+        followCurtain();
         if (moveMap && hasLoc && pageReady) map.evaluateJavascript("showPerson(" + lat + "," + lon + ")", null);
     }
 

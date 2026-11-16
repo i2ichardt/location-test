@@ -6,11 +6,11 @@ The server is [family-location-server](https://github.com/i2ichardt/family-locat
 
 ## Download and install
 
-The compiled app is on the [v2.5 release](https://github.com/i2ichardt/location-test/releases/tag/v2.5).
+The compiled app is on the [v2.6 release](https://github.com/i2ichardt/location-test/releases/tag/v2.6).
 
-[Download LocationTest.apk](https://github.com/i2ichardt/location-test/releases/download/v2.5/LocationTest.apk)
+[Download LocationTest.apk](https://github.com/i2ichardt/location-test/releases/download/v2.6/LocationTest.apk)
 
-The installed app is named **Family** (version 2.3). Android will ask you to allow installs from the browser.
+The installed app is named **Family** (version 2.6). Android will ask you to allow installs from the browser.
 
 Allow location when the app asks. Sharing keeps a small notification so Android does not stop the updates.
 
@@ -38,11 +38,11 @@ You can also turn sharing off, or update the pin only when you stop moving.
 
 The map is the whole screen. Pinch to zoom. There are no +/- buttons.
 
-Your photo, and everyone else's, sits on the pin. **Satellite** switches to aerial photos. Tap it again for the street map.
+Your photo, and everyone else's, sits on the pin. **Satellite** switches to aerial photos. Tap it again for the street map. The app opens in the same view next time.
 
-**People** is a bar at the bottom and stays collapsed until you tap it. Rows can still have **View**, **Call**, and **Text**.
+**People** is the handle at the bottom. Pull that handle and the panel slides with your finger. It stays where you let go. Only the handle moves it. The list under the handle scrolls when the family does not fit. Each person has **Center**, **View**, **Call**, and **Text**. Center moves the map to them and does not open Street View.
 
-Tapping a person pin does not open Street View immediately. It shows a card with their name, when they arrived, and how long they have been at that area (or "this spot"), plus **View**, **Call**, and **Text**. **View** opens the Google panorama. **Call** opens the phone dialer. **Text** opens a message.
+Tapping a person pin does not open Street View immediately. It shows a card with their name, when they arrived, and how long they have been at that area (or "this spot"), plus **View**, **Call**, and **Text**. Swipe the card left or right to close it, or tap that person again. **View** opens the Google panorama. **Call** opens the phone dialer. **Text** opens a message.
 
 The map tiles are OpenStreetMap. Street View opens Google Maps, so no Maps key is stored in the app.
 
