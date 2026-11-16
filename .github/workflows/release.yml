@@ -1,0 +1,20 @@
+name: Release
+on:
+  push:
+    tags:
+      - "v*"
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish the phone app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            LocationTest.apk \
+            --title "Family ${GITHUB_REF_NAME#v}" \
+            --notes "Compiled phone app. Settings opens as a menu. Back leaves without saving. Save is on each page. Custom update times can be seconds or minutes. Tap a person for arrival time, how long they have been there, and View, Call, and Text."
