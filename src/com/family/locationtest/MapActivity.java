@@ -13,12 +13,14 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import java.io.File;
 import java.text.DateFormat;
@@ -33,7 +35,6 @@ public class MapActivity extends Activity {
     private LinearLayout sheet;
     private LinearLayout peopleList;
     private View peopleTab;
-    private TextView peopleLabel;
     private LinearLayout personCard;
     private TextView cardName;
     private TextView cardArrived;
@@ -43,6 +44,8 @@ public class MapActivity extends Activity {
     private String openCardId = "";
     private boolean pageReady;
     private boolean sheetOpen;
+    private boolean curtainDrag;
+    private float curtainClosed;
     private boolean satellite;
     private String lastMarkers = "[]";
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -59,7 +62,6 @@ public class MapActivity extends Activity {
         sheet = findViewById(R.id.sheet);
         peopleList = findViewById(R.id.peopleList);
         peopleTab = findViewById(R.id.peopleTab);
-        peopleLabel = findViewById(R.id.peopleLabel);
         personCard = findViewById(R.id.personCard);
         cardName = findViewById(R.id.cardName);
         cardArrived = findViewById(R.id.cardArrived);
@@ -86,49 +88,57 @@ public class MapActivity extends Activity {
                 startActivity(new Intent(MapActivity.this, SettingsActivity.class));
             }
         });
+        ((SwipeCard) personCard).setOnDismiss(new Runnable() {
+            @Override
+            public void run() {
+                hidePersonCard();
+            }
+        });
+        satellite = Prefs.satellite(this);
+        final Button satelliteButton = findViewById(R.id.satelliteButton);
+        satelliteButton.setText(satellite ? "Map" : "Satellite");
+        sheet.setTranslationY(4000);
         peopleTab.setOnTouchListener(new View.OnTouchListener() {
-            float downY;
+            float anchorY;
+            float anchorTy;
             @Override
             public boolean onTouch(View v, MotionEvent event) {
                 if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                    downY = event.getRawY();
+                    curtainDrag = true;
+                    sheet.animate().cancel();
+                    anchorY = event.getRawY();
+                    anchorTy = sheet.getTranslationY();
                     return true;
                 }
                 if (event.getAction() == MotionEvent.ACTION_MOVE) {
-                    float dy = event.getRawY() - downY;
-                    if (!sheetOpen && dy < -dp(28)) setSheet(true);
-                    if (sheetOpen && dy > dp(28)) setSheet(false);
+                    float next = anchorTy + (event.getRawY() - anchorY);
+                    if (next < 0) next = 0;
+                    if (next > curtainClosed) next = curtainClosed;
+                    sheet.setTranslationY(next);
+                    return true;
+                }
+                if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
+                    curtainDrag = false;
+                    sheetOpen = sheet.getTranslationY() < curtainClosed * 0.5f;
+                    sheet.animate().translationY(sheetOpen ? 0 : curtainClosed).setDuration(180).start();
+                    return true;
                 }
                 return true;
             }
         });
-        personCard.setOnTouchListener(new View.OnTouchListener() {
-            float downX;
-            float downY;
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                    downX = event.getRawX();
-                    downY = event.getRawY();
-                    return false;
-                }
-                if (event.getAction() == MotionEvent.ACTION_MOVE) {
-                    float dx = event.getRawX() - downX;
-                    float dy = event.getRawY() - downY;
-                    if (Math.abs(dx) > dp(64) && Math.abs(dx) > Math.abs(dy) * 1.4f) {
-                        hidePersonCard();
-                        return true;
-                    }
-                }
-                return false;
-            }
-        });
-        findViewById(R.id.satelliteButton).setOnClickListener(new View.OnClickListener() {
+        satelliteButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 satellite = !satellite;
-                ((Button) v).setText(satellite ? "Map" : "Satellite");
+                Prefs.setSatellite(MapActivity.this, satellite);
+                satelliteButton.setText(satellite ? "Map" : "Satellite");
                 if (pageReady) map.evaluateJavascript("setSatellite(" + satellite + ")", null);
+            }
+        });
+        sheet.post(new Runnable() {
+            @Override
+            public void run() {
+                placeCurtain(false);
             }
         });
         askPermissions();
@@ -229,7 +239,6 @@ public class MapActivity extends Activity {
                 markers.put(pin);
             }
             statusText.setText(label + " · " + shown + (shown == 1 ? " person" : " people"));
-            if (peopleLabel != null) peopleLabel.setText("People");
             lastMarkers = markers.toString();
             lastPlaces = placePins.toString();
             lastMembers = members;
@@ -340,11 +349,42 @@ public class MapActivity extends Activity {
 
     private void setSheet(boolean open) {
         sheetOpen = open;
-        sheet.setVisibility(open ? View.VISIBLE : View.GONE);
+        placeCurtain(true);
+    }
+
+    private void placeCurtain(boolean animate) {
+        int closed = sheet.getHeight() - peopleTab.getHeight();
+        if (closed < 0) closed = 0;
+        curtainClosed = closed;
+        if (curtainDrag) return;
+        float target = sheetOpen ? 0 : curtainClosed;
+        if (animate) sheet.animate().translationY(target).setDuration(180).start();
+        else sheet.setTranslationY(target);
+    }
+
+    private void fitPeopleScroll() {
+        ScrollView scroll = findViewById(R.id.peopleScroll);
+        int max = (int) (getResources().getDisplayMetrics().heightPixels * 0.48f);
+        int width = scroll.getWidth();
+        if (width <= 0) width = getResources().getDisplayMetrics().widthPixels - dp(32);
+        peopleList.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        int next = Math.min(Math.max(peopleList.getMeasuredHeight(), dp(4)), max);
+        ViewGroup.LayoutParams lp = scroll.getLayoutParams();
+        if (lp.height != next) {
+            lp.height = next;
+            scroll.setLayoutParams(lp);
+        }
+        sheet.post(new Runnable() {
+            @Override
+            public void run() {
+                placeCurtain(false);
+            }
+        });
     }
 
     private void hidePersonCard() {
         openCardId = "";
+        personCard.setTranslationX(0);
         personCard.setVisibility(View.GONE);
     }
 
@@ -383,13 +423,14 @@ public class MapActivity extends Activity {
             empty.setTextColor(0xFF5C584F);
             empty.setPadding(8, 12, 8, 12);
             peopleList.addView(empty);
-            return;
+        } else {
+            for (int i = 0; i < members.length(); i++) {
+                JSONObject member = members.optJSONObject(i);
+                if (member == null) continue;
+                peopleList.addView(personBubble(member));
+            }
         }
-        for (int i = 0; i < members.length(); i++) {
-            JSONObject member = members.optJSONObject(i);
-            if (member == null) continue;
-            peopleList.addView(personBubble(member));
-        }
+        fitPeopleScroll();
     }
 
     private View personBubble(final JSONObject member) {
@@ -440,6 +481,12 @@ public class MapActivity extends Activity {
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setPadding(0, dp(10), 0, 0);
+        if (hasLoc) actions.addView(wideButton("Center", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                centerOn(lat, lon);
+            }
+        }));
         if (hasLoc) actions.addView(wideButton("View", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -491,10 +538,12 @@ public class MapActivity extends Activity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
+    private void centerOn(double lat, double lon) {
+        if (pageReady) map.evaluateJavascript("showPerson(" + lat + "," + lon + ")", null);
+    }
+
     private void openStreet(double lat, double lon) {
-        if (pageReady) {
-            map.evaluateJavascript("showPerson(" + lat + "," + lon + ")", null);
-        }
+        centerOn(lat, lon);
         Uri uri = Uri.parse("https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=" + lat + "," + lon);
         startActivity(new Intent(Intent.ACTION_VIEW, uri));
     }

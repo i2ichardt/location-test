@@ -65,7 +65,7 @@
         android:layout_gravity="bottom"
         android:orientation="vertical">
 
-        <LinearLayout
+        <com.family.locationtest.SwipeCard
             android:id="@+id/personCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -142,7 +142,7 @@
                     android:textAllCaps="false"
                     android:textColor="#F7F4EE" />
             </LinearLayout>
-        </LinearLayout>
+        </com.family.locationtest.SwipeCard>
 
         <LinearLayout
             android:id="@+id/sheet"
@@ -151,22 +151,37 @@
             android:background="@drawable/sheet_bg"
             android:orientation="vertical"
             android:paddingLeft="16dp"
-            android:paddingTop="12dp"
             android:paddingRight="16dp"
-            android:visibility="gone">
+            android:paddingBottom="12dp">
+
+            <FrameLayout
+                android:id="@+id/peopleTab"
+                android:layout_width="match_parent"
+                android:layout_height="28dp">
+
+                <View
+                    android:layout_width="40dp"
+                    android:layout_height="4dp"
+                    android:layout_gravity="center"
+                    android:background="@drawable/grabber" />
+            </FrameLayout>
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:paddingBottom="6dp"
+                android:paddingBottom="8dp"
                 android:text="People in your group"
                 android:textColor="#1A1916"
                 android:textSize="16sp"
                 android:textStyle="bold" />
 
             <ScrollView
+                android:id="@+id/peopleScroll"
                 android:layout_width="match_parent"
-                android:layout_height="280dp">
+                android:layout_height="wrap_content"
+                android:fillViewport="false"
+                android:overScrollMode="ifContentScrolls"
+                android:scrollbars="vertical">
 
                 <LinearLayout
                     android:id="@+id/peopleList"
@@ -174,31 +189,6 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical" />
             </ScrollView>
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/peopleTab"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@drawable/sheet_bg"
-            android:gravity="center_horizontal"
-            android:orientation="vertical"
-            android:paddingTop="8dp"
-            android:paddingBottom="10dp">
-
-            <View
-                android:layout_width="40dp"
-                android:layout_height="4dp"
-                android:background="@drawable/grabber" />
-
-            <TextView
-                android:id="@+id/peopleLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:paddingTop="4dp"
-                android:text="People"
-                android:textColor="#5C584F"
-                android:textSize="12sp" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

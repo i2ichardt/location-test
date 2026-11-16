@@ -106,6 +106,14 @@ public final class Prefs {
         return seconds(context, "fetchEvery", 15);
     }
 
+    public static boolean satellite(Context context) {
+        return sp(context).getBoolean("satellite", false);
+    }
+
+    public static void setSatellite(Context context, boolean on) {
+        sp(context).edit().putBoolean("satellite", on).apply();
+    }
+
     public static boolean showPlaceNames(Context context) {
         return sp(context).getBoolean("showPlaceNames", false);
     }
