@@ -19,8 +19,8 @@ The app is already filled in with a sample pin so you can test before GPS works:
 |---|---|
 | User ID | Alice |
 | Group ID | Fam1 |
-| Latitude | 42.3601 |
-| Longitude | -71.0589 |
+| Latitude | 69.3601 |
+| Longitude | 69.0589 |
 
 Those numbers are a pin in Boston, not your house.
 
