@@ -122,6 +122,14 @@ public final class Prefs {
         sp(context).edit().putBoolean("showPlaceNames", on).apply();
     }
 
+    public static boolean placeAlerts(Context context) {
+        return sp(context).getBoolean("placeAlerts", true);
+    }
+
+    public static void setPlaceAlerts(Context context, boolean on) {
+        sp(context).edit().putBoolean("placeAlerts", on).apply();
+    }
+
     public static boolean notifyArrive(Context context, String placeId) {
         return sp(context).getBoolean("arrive:" + placeId, false);
     }

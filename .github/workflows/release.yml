@@ -17,4 +17,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             LocationTest.apk \
             --title "Family ${GITHUB_REF_NAME#v}" \
-            --notes "Family 2.8. Tap People to open or close the list, and drag it as well. Tap Home · people to fit the group on the map. Battery is an icon with the percent on each person."
+            --notes "Family 2.9. Settings matches the shared-places screen, including per-place alerts and an update check. Profile photos keep a larger copy for the full-screen view."

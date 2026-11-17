@@ -5,6 +5,10 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
@@ -29,6 +33,8 @@ import android.widget.Toast;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -41,14 +47,26 @@ public class SettingsActivity extends Activity {
     private Bitmap pendingPhoto;
     private LinearLayout placeList;
     private View.OnClickListener pendingSave;
+    private TextView updateStatus;
+    private String updateUrl = "";
+    private boolean pendingInstall;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         root = new FrameLayout(this);
-        root.setBackgroundColor(0xFFF2F1F6);
+        root.setBackgroundColor(0xFFE7F0FB);
         setContentView(root);
         showHub();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (pendingInstall) {
+            pendingInstall = false;
+            installDownloaded();
+        }
     }
 
     @Override
@@ -66,23 +84,15 @@ public class SettingsActivity extends Activity {
     private void showHub() {
         page = 0;
         watch.stop();
-        ScrollView scroll = pageScroll();
-        LinearLayout body = pageBody();
-        body.addView(title("Settings"));
-        body.addView(menuCard("Connection", "Home address, Tailscale address, and which one to use", 1));
-        body.addView(menuCard("Sharing", "How often your pin is sent, including a custom time", 2));
-        body.addView(menuCard("Group", "The name everyone in the family uses", 3));
-        body.addView(menuCard("Profile", "Your name, phone number, and photo", 4));
-        body.addView(menuCard("Shared places", "Places the group can see, and alerts for this phone", 5));
-        body.addView(closeButton("Close", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                finish();
-            }
-        }));
-        scroll.addView(body);
-        root.removeAllViews();
-        root.addView(scroll);
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.addView(menuCard("Connection", "Home address, Tailscale address, and which one to use", 1, 0xFF2F6BFF));
+        body.addView(menuCard("Sharing", "How often your pin is sent, including a custom time", 2, 0xFF1F8A70));
+        body.addView(menuCard("Group", "The name everyone in the family uses", 3, 0xFF5B4BDB));
+        body.addView(menuCard("Profile", "Your name, phone number, and photo", 4, 0xFFE07A2F));
+        body.addView(menuCard("Shared places", "Places on the map, and alerts for this phone", 5, 0xFF2F6BFF));
+        body.addView(menuCard("Updates", "Check the release page and install a newer app", 6, 0xFF2E9B4F));
+        showPage("Settings", "Connection, sharing, your profile, and the places you share.", false, body);
     }
 
     private void showConnection() {
@@ -277,29 +287,117 @@ public class SettingsActivity extends Activity {
         page = 5;
         placeList = new LinearLayout(this);
         placeList.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout body = form("Shared places", null);
-        body.addView(hint("Saving a place sends it to the PC immediately. Other open phones refresh their list."));
-        final CheckBox names = new CheckBox(this);
-        names.setText("Show place names on the map");
-        names.setTextColor(0xFF1C1B19);
-        names.setChecked(Prefs.showPlaceNames(this));
-        names.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Prefs.setShowPlaceNames(SettingsActivity.this, names.isChecked());
-            }
-        });
-        body.addView(names);
-        body.addView(placeList);
-        Button add = textButton("Save where I am as a place", false);
+
+        LinearLayout stack = new LinearLayout(this);
+        stack.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackgroundResource(R.drawable.settings_card);
+        card.setPadding(dp(14), dp(14), dp(14), dp(14));
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.addView(new GlyphBadge(this, 5, 0xFF2F6BFF));
+        LinearLayout titles = new LinearLayout(this);
+        titles.setOrientation(LinearLayout.VERTICAL);
+        titles.setPadding(dp(10), 0, dp(8), 0);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        titles.setLayoutParams(titleLp);
+        TextView saved = new TextView(this);
+        saved.setText("Saved Places");
+        saved.setTextColor(0xFF1B2559);
+        saved.setTextSize(20);
+        saved.setTypeface(Typeface.DEFAULT_BOLD);
+        TextView manage = hint("Manage your saved places.");
+        manage.setPadding(0, dp(2), 0, 0);
+        titles.addView(saved);
+        titles.addView(manage);
+        head.addView(titles);
+        Button add = new Button(this);
+        add.setText("+  Add Place");
+        add.setAllCaps(false);
+        add.setTextSize(14);
+        add.setTextColor(0xFFFFFFFF);
+        add.setBackgroundResource(R.drawable.settings_blue);
+        add.setStateListAnimator(null);
+        add.setPadding(dp(14), 0, dp(14), 0);
+        LinearLayout.LayoutParams addLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(42));
+        add.setLayoutParams(addLp);
         add.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 askPlaceName();
             }
         });
-        body.addView(add);
-        mount(body);
+        head.addView(add);
+        card.addView(head);
+        LinearLayout.LayoutParams listLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        listLp.topMargin = dp(12);
+        placeList.setLayoutParams(listLp);
+        card.addView(placeList);
+        stack.addView(card);
+
+        LinearLayout notes = new LinearLayout(this);
+        notes.setOrientation(LinearLayout.HORIZONTAL);
+        notes.setGravity(Gravity.CENTER_VERTICAL);
+        notes.setBackgroundResource(R.drawable.settings_card);
+        notes.setPadding(dp(14), dp(14), dp(16), dp(14));
+        LinearLayout.LayoutParams noteLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        noteLp.topMargin = dp(14);
+        notes.setLayoutParams(noteLp);
+        notes.addView(new GlyphBadge(this, 7, 0xFF7C4DFF));
+        LinearLayout noteWords = new LinearLayout(this);
+        noteWords.setOrientation(LinearLayout.VERTICAL);
+        noteWords.setPadding(dp(12), 0, dp(8), 0);
+        LinearLayout.LayoutParams nw = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        noteWords.setLayoutParams(nw);
+        TextView noteTitle = new TextView(this);
+        noteTitle.setText("Notifications");
+        noteTitle.setTextColor(0xFF1B2559);
+        noteTitle.setTextSize(18);
+        noteTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        TextView noteSub = hint("Get notified about your places.");
+        noteSub.setPadding(0, dp(2), 0, 0);
+        noteWords.addView(noteTitle);
+        noteWords.addView(noteSub);
+        notes.addView(noteWords);
+        final PillSwitch master = new PillSwitch(this, Prefs.placeAlerts(this));
+        master.setOnToggle(new PillSwitch.Listener() {
+            @Override
+            public void onToggle(boolean on) {
+                Prefs.setPlaceAlerts(SettingsActivity.this, on);
+            }
+        });
+        notes.addView(master);
+        stack.addView(notes);
+
+        LinearLayout namesRow = new LinearLayout(this);
+        namesRow.setOrientation(LinearLayout.HORIZONTAL);
+        namesRow.setGravity(Gravity.CENTER_VERTICAL);
+        namesRow.setBackgroundResource(R.drawable.settings_card);
+        namesRow.setPadding(dp(16), dp(14), dp(16), dp(14));
+        LinearLayout.LayoutParams namesLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        namesLp.topMargin = dp(14);
+        namesRow.setLayoutParams(namesLp);
+        TextView namesLabel = new TextView(this);
+        namesLabel.setText("Show place names on the map");
+        namesLabel.setTextColor(0xFF1B2559);
+        namesLabel.setTextSize(15);
+        LinearLayout.LayoutParams namesText = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        namesLabel.setLayoutParams(namesText);
+        namesRow.addView(namesLabel);
+        final PillSwitch names = new PillSwitch(this, Prefs.showPlaceNames(this));
+        names.setOnToggle(new PillSwitch.Listener() {
+            @Override
+            public void onToggle(boolean on) {
+                Prefs.setShowPlaceNames(SettingsActivity.this, on);
+            }
+        });
+        namesRow.addView(names);
+        stack.addView(namesRow);
+
+        showPage("Shared Places", "Save places to the map and get notified when someone arrives or leaves.", true, stack);
         loadPlaces();
         watch.start(this, new GroupWatch.Listener() {
             @Override
@@ -317,47 +415,183 @@ public class SettingsActivity extends Activity {
         });
     }
 
+    private void showUpdates() {
+        page = 6;
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackgroundResource(R.drawable.settings_card);
+        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        TextView heading = new TextView(this);
+        heading.setText("App updates");
+        heading.setTextColor(0xFF1B2559);
+        heading.setTextSize(20);
+        heading.setTypeface(Typeface.DEFAULT_BOLD);
+        card.addView(heading);
+        card.addView(hint("This phone is on version " + versionName() + ". Check looks at the GitHub release page."));
+        updateStatus = new TextView(this);
+        updateStatus.setText("Not checked yet.");
+        updateStatus.setTextColor(0xFF1B2559);
+        updateStatus.setTextSize(15);
+        updateStatus.setPadding(0, dp(8), 0, dp(8));
+        card.addView(updateStatus);
+        Button check = textButton("Check for updates", true);
+        check.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                checkUpdates();
+            }
+        });
+        card.addView(check);
+        Button install = textButton("Download and install", true);
+        install.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (updateUrl == null || updateUrl.isEmpty()) {
+                    Toast.makeText(SettingsActivity.this, "Check for updates first", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                downloadUpdate();
+            }
+        });
+        card.addView(install);
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.addView(card);
+        showPage("Updates", "Look on the release page for a newer install.", true, wrap);
+    }
+
     private void mount(LinearLayout body) {
         if (pendingSave != null) {
             Button save = textButton("Save", true);
             save.setOnClickListener(pendingSave);
             body.addView(save);
         }
-        ScrollView scroll = pageScroll();
-        scroll.addView(body);
-        root.removeAllViews();
-        root.addView(scroll);
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        body.setBackgroundResource(R.drawable.settings_card);
+        body.setPadding(dp(16), dp(16), dp(16), dp(16));
+        wrap.addView(body);
+        showPage(pageTitle(), pageSubtitle(), true, wrap);
+    }
+
+    private String pageTitle() {
+        if (page == 1) return "Connection";
+        if (page == 2) return "Sharing";
+        if (page == 3) return "Group";
+        if (page == 4) return "Profile";
+        if (page == 6) return "Updates";
+        return "Settings";
+    }
+
+    private String pageSubtitle() {
+        if (page == 1) return "The address of the PC at home, and on Tailscale.";
+        if (page == 2) return "How often this phone sends its pin.";
+        if (page == 3) return "Everyone who should see each other uses this name.";
+        if (page == 4) return "Your name, phone, and the photo on your pin.";
+        if (page == 6) return "Look on the release page for a newer install.";
+        return "";
     }
 
     private LinearLayout form(String name, View.OnClickListener save) {
         pendingSave = save;
-        LinearLayout body = pageBody();
-        body.addView(title(name));
-        body.addView(closeButton("Back", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showHub();
-            }
-        }));
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
         return body;
     }
 
-    private View menuCard(final String name, String detail, final int which) {
+    private void showPage(String title, String subtitle, boolean back, LinearLayout content) {
+        FrameLayout frame = new FrameLayout(this);
+        frame.setBackgroundColor(0xFFE7F0FB);
+        HillsView hills = new HillsView(this);
+        FrameLayout.LayoutParams hillLp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(160), Gravity.BOTTOM);
+        frame.addView(hills, hillLp);
+
+        LinearLayout column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        FrameLayout head = new FrameLayout(this);
+        ImageView art = new ImageView(this);
+        art.setImageResource(R.drawable.banner_places);
+        art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        head.addView(art, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(236)));
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        int topPad = back ? dp(16) : dp(40);
+        words.setPadding(dp(20), topPad, dp(132), dp(36));
+        if (back) {
+            TextView arrow = new TextView(this);
+            arrow.setText("←");
+            arrow.setTextColor(0xFFFFFFFF);
+            arrow.setTextSize(28);
+            arrow.setPadding(dp(2), dp(4), dp(16), dp(8));
+            arrow.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    showHub();
+                }
+            });
+            words.addView(arrow);
+        }
+        TextView heading = new TextView(this);
+        heading.setText(title);
+        heading.setTextColor(0xFFFFFFFF);
+        heading.setTextSize(30);
+        heading.setTypeface(Typeface.DEFAULT_BOLD);
+        words.addView(heading);
+        TextView sub = new TextView(this);
+        sub.setText(subtitle);
+        sub.setTextColor(0xF2FFFFFF);
+        sub.setTextSize(14);
+        sub.setPadding(0, dp(6), 0, 0);
+        words.addView(sub);
+        FrameLayout.LayoutParams wordLp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(236), Gravity.BOTTOM);
+        head.addView(words, wordLp);
+        column.addView(head);
+
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        clp.leftMargin = dp(16);
+        clp.rightMargin = dp(16);
+        clp.topMargin = -dp(18);
+        clp.bottomMargin = dp(130);
+        content.setLayoutParams(clp);
+        column.addView(content);
+
+        ScrollView scroll = pageScroll();
+        scroll.addView(column);
+        frame.addView(scroll, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        root.removeAllViews();
+        root.addView(frame);
+    }
+
+    private View menuCard(final String name, String detail, final int which, int color) {
         LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackgroundResource(R.drawable.card_bg);
-        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setBackgroundResource(R.drawable.settings_card);
+        card.setPadding(dp(14), dp(14), dp(14), dp(14));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.bottomMargin = dp(10);
+        lp.bottomMargin = dp(12);
         card.setLayoutParams(lp);
+        card.addView(new GlyphBadge(this, which, color));
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setPadding(dp(12), 0, dp(8), 0);
+        LinearLayout.LayoutParams wordLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        words.setLayoutParams(wordLp);
         TextView heading = new TextView(this);
         heading.setText(name);
         heading.setTextSize(17);
-        heading.setTextColor(0xFF1C1B19);
+        heading.setTextColor(0xFF1B2559);
         heading.setTypeface(Typeface.DEFAULT_BOLD);
         TextView sub = hint(detail);
-        card.addView(heading);
-        card.addView(sub);
+        sub.setPadding(0, dp(2), 0, 0);
+        words.addView(heading);
+        words.addView(sub);
+        card.addView(words);
+        TextView chevron = new TextView(this);
+        chevron.setText("›");
+        chevron.setTextSize(26);
+        chevron.setTextColor(0xFF9AA6C2);
+        card.addView(chevron);
         card.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -365,6 +599,7 @@ public class SettingsActivity extends Activity {
                 else if (which == 2) showSharing();
                 else if (which == 3) showGroup();
                 else if (which == 4) showProfile();
+                else if (which == 6) showUpdates();
                 else showPlaces();
             }
         });
@@ -388,7 +623,7 @@ public class SettingsActivity extends Activity {
         TextView view = new TextView(this);
         view.setText(text);
         view.setTextSize(28);
-        view.setTextColor(0xFF1C1B19);
+        view.setTextColor(0xFF1B2559);
         view.setTypeface(Typeface.DEFAULT_BOLD);
         view.setPadding(0, 0, 0, dp(12));
         return view;
@@ -398,7 +633,7 @@ public class SettingsActivity extends Activity {
         TextView view = new TextView(this);
         view.setText(text);
         view.setTextSize(15);
-        view.setTextColor(0xFF1C1B19);
+        view.setTextColor(0xFF1B2559);
         view.setTypeface(Typeface.DEFAULT_BOLD);
         view.setPadding(0, dp(12), 0, dp(4));
         return view;
@@ -408,7 +643,7 @@ public class SettingsActivity extends Activity {
         TextView view = new TextView(this);
         view.setText(text);
         view.setTextSize(13);
-        view.setTextColor(0xFF6E6A64);
+        view.setTextColor(0xFF7E8AA8);
         view.setPadding(0, dp(2), 0, dp(6));
         return view;
     }
@@ -438,9 +673,9 @@ public class SettingsActivity extends Activity {
         button.setText(text);
         button.setAllCaps(false);
         button.setTextSize(15);
-        button.setBackgroundResource(primary ? R.drawable.pill_dark : R.drawable.pill_light);
+        button.setBackgroundResource(primary ? R.drawable.settings_blue : R.drawable.pill_light);
         button.setStateListAnimator(null);
-        button.setTextColor(primary ? 0xFFF7F4EE : 0xFF1C1B19);
+        button.setTextColor(primary ? 0xFFFFFFFF : 0xFF1B2559);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48));
         lp.topMargin = dp(8);
         button.setLayoutParams(lp);
@@ -500,7 +735,8 @@ public class SettingsActivity extends Activity {
             if (bitmap == null) return;
             int size = Math.min(bitmap.getWidth(), bitmap.getHeight());
             Bitmap square = Bitmap.createBitmap(bitmap, (bitmap.getWidth() - size) / 2, (bitmap.getHeight() - size) / 2, size, size);
-            pendingPhoto = Bitmap.createScaledBitmap(square, 256, 256, true);
+            int edge = Math.min(1024, square.getWidth());
+            pendingPhoto = edge == square.getWidth() ? square : Bitmap.createScaledBitmap(square, edge, edge, true);
             ImageView preview = findViewById(R.id.imagePreview);
             if (preview != null) preview.setImageBitmap(pendingPhoto);
         } catch (Exception e) {
@@ -510,11 +746,23 @@ public class SettingsActivity extends Activity {
 
     private void writePhoto(Bitmap bitmap) {
         try {
+            int quality = 84;
+            byte[] bytes = jpegBytes(bitmap, quality);
+            while (bytes.length > 1100000 && quality > 52) {
+                quality -= 8;
+                bytes = jpegBytes(bitmap, quality);
+            }
             FileOutputStream out = new FileOutputStream(new File(getFilesDir(), "profile.jpg"));
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, out);
+            out.write(bytes);
             out.close();
         } catch (Exception ignored) {
         }
+    }
+
+    private byte[] jpegBytes(Bitmap bitmap, int quality) {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out);
+        return out.toByteArray();
     }
 
     private void uploadProfile() {
@@ -530,7 +778,7 @@ public class SettingsActivity extends Activity {
                     json.put("name", Prefs.name(SettingsActivity.this));
                     json.put("phone", Prefs.phone(SettingsActivity.this));
                     File file = new File(getFilesDir(), "profile.jpg");
-                    if (file.exists() && file.length() > 0 && file.length() < 400000) {
+                    if (file.exists() && file.length() > 0 && file.length() < 1400000) {
                         java.io.FileInputStream in = new java.io.FileInputStream(file);
                         byte[] data = new byte[(int) file.length()];
                         int off = 0;
@@ -583,45 +831,127 @@ public class SettingsActivity extends Activity {
 
     private View placeRow(final JSONObject place) {
         final String id = place.optString("id");
+        final String name = place.optString("name", "Place");
+        final int meters = (int) place.optDouble("radius", 100);
+        final double lat = place.optDouble("lat");
+        final double lon = place.optDouble("lon");
+
         LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(0, dp(8), 0, dp(8));
+        box.setOrientation(LinearLayout.HORIZONTAL);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        box.setBackgroundResource(R.drawable.settings_inner);
+        box.setPadding(dp(10), dp(10), dp(8), dp(10));
+        LinearLayout.LayoutParams boxLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        boxLp.bottomMargin = dp(10);
+        box.setLayoutParams(boxLp);
+
+        ImageView thumb = new ImageView(this);
+        thumb.setImageResource(placeArt(name));
+        thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        thumb.setClipToOutline(true);
+        thumb.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, android.graphics.Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(16));
+            }
+        });
+        LinearLayout.LayoutParams thumbLp = new LinearLayout.LayoutParams(dp(78), dp(78));
+        thumb.setLayoutParams(thumbLp);
+        thumb.setBackgroundResource(R.drawable.settings_inner);
+        box.addView(thumb);
+
+        LinearLayout words = new LinearLayout(this);
+        words.setOrientation(LinearLayout.VERTICAL);
+        words.setPadding(dp(10), 0, dp(6), 0);
+        LinearLayout.LayoutParams wordLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        words.setLayoutParams(wordLp);
         TextView title = new TextView(this);
-        title.setText(place.optString("name") + "  ·  " + (int) place.optDouble("radius", 100) + " m");
-        title.setTextColor(0xFF1C1B19);
-        title.setTextSize(16);
-        box.addView(title);
-        final CheckBox arrive = new CheckBox(this);
-        arrive.setText("Tell me when someone arrives");
-        arrive.setTextColor(0xFF1C1B19);
-        arrive.setChecked(Prefs.notifyArrive(this, id));
-        arrive.setOnClickListener(new View.OnClickListener() {
+        title.setText(name);
+        title.setTextColor(0xFF1B2559);
+        title.setTextSize(18);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        words.addView(title);
+
+        TextView radius = new TextView(this);
+        radius.setText("📍  " + meters + " m");
+        radius.setTextColor(0xFF6D7896);
+        radius.setTextSize(14);
+        radius.setPadding(0, dp(4), 0, dp(6));
+        radius.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                Prefs.setNotify(SettingsActivity.this, id, true, arrive.isChecked());
+                askRadius(id, name, lat, lon, meters);
             }
         });
-        final CheckBox leave = new CheckBox(this);
-        leave.setText("Tell me when someone leaves");
-        leave.setTextColor(0xFF1C1B19);
-        leave.setChecked(Prefs.notifyLeave(this, id));
-        leave.setOnClickListener(new View.OnClickListener() {
+        words.addView(radius);
+        View line = new View(this);
+        line.setBackgroundColor(0xFFE1E6F2);
+        LinearLayout.LayoutParams lineLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1));
+        lineLp.bottomMargin = dp(6);
+        line.setLayoutParams(lineLp);
+        words.addView(line);
+        words.addView(checkLine("Notify when someone arrives", Prefs.notifyArrive(this, id), new PillSwitch.Listener() {
             @Override
-            public void onClick(View v) {
-                Prefs.setNotify(SettingsActivity.this, id, false, leave.isChecked());
+            public void onToggle(boolean on) {
+                Prefs.setNotify(SettingsActivity.this, id, true, on);
             }
-        });
-        Button remove = textButton("Remove", false);
-        remove.setOnClickListener(new View.OnClickListener() {
+        }));
+        words.addView(checkLine("Notify when someone leaves", Prefs.notifyLeave(this, id), new PillSwitch.Listener() {
+            @Override
+            public void onToggle(boolean on) {
+                Prefs.setNotify(SettingsActivity.this, id, false, on);
+            }
+        }));
+        box.addView(words);
+
+        View rule = new View(this);
+        rule.setBackgroundColor(0xFFE1E6F2);
+        LinearLayout.LayoutParams ruleLp = new LinearLayout.LayoutParams(dp(1), dp(72));
+        ruleLp.leftMargin = dp(4);
+        ruleLp.rightMargin = dp(6);
+        rule.setLayoutParams(ruleLp);
+        box.addView(rule);
+
+        TrashButton trash = new TrashButton(this);
+        trash.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 deletePlace(id);
             }
         });
-        box.addView(arrive);
-        box.addView(leave);
-        box.addView(remove);
+        box.addView(trash);
         return box;
+    }
+
+    private int placeArt(String name) {
+        String key = name == null ? "" : name.toLowerCase();
+        if (key.contains("home") || key.contains("house")) return R.drawable.place_home;
+        if (key.contains("work") || key.contains("office") || key.contains("job")) return R.drawable.place_work;
+        return R.drawable.place_other;
+    }
+
+    private View checkLine(String text, boolean on, final PillSwitch.Listener listener) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(3), 0, dp(3));
+        final CheckDot dot = new CheckDot(this, on);
+        row.addView(dot);
+        TextView label = new TextView(this);
+        label.setText(text);
+        label.setTextColor(0xFF1B2559);
+        label.setTextSize(14);
+        label.setPadding(dp(8), 0, 0, 0);
+        row.addView(label);
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                boolean next = !dot.on;
+                dot.setOn(next);
+                listener.onToggle(next);
+            }
+        });
+        return row;
     }
 
     private void askPlaceName() {
@@ -629,25 +959,66 @@ public class SettingsActivity extends Activity {
             Toast.makeText(this, "No location yet. Open the map and allow location first.", Toast.LENGTH_LONG).show();
             return;
         }
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(18), dp(8), dp(18), 0);
         final EditText name = new EditText(this);
         name.setHint("Home, school, work");
+        final EditText radius = new EditText(this);
+        radius.setHint("Distance in meters");
+        radius.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        radius.setText("100");
+        form.addView(name);
+        form.addView(radius);
         new AlertDialog.Builder(this)
-                .setTitle("Save this place")
-                .setMessage("Uses your latest location. The distance for arriving and leaving is set per place on the PC.")
-                .setView(name)
+                .setTitle("Add place")
+                .setMessage("Uses where you are right now.")
+                .setView(form)
                 .setPositiveButton("Save", new android.content.DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(android.content.DialogInterface dialog, int which) {
                         String label = name.getText().toString().trim();
                         if (label.isEmpty()) label = "Place";
-                        postPlace(label);
+                        int meters = 100;
+                        try {
+                            meters = Integer.parseInt(radius.getText().toString().trim());
+                        } catch (Exception ignored) {
+                        }
+                        if (meters < 20) meters = 20;
+                        if (meters > 5000) meters = 5000;
+                        postPlace("p" + System.currentTimeMillis(), label, Prefs.lat(SettingsActivity.this), Prefs.lon(SettingsActivity.this), meters);
                     }
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
     }
 
-    private void postPlace(final String label) {
+    private void askRadius(final String id, final String name, final double lat, final double lon, int current) {
+        final EditText radius = new EditText(this);
+        radius.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        radius.setText(String.valueOf(current));
+        new AlertDialog.Builder(this)
+                .setTitle(name)
+                .setMessage("Arrive and leave distance, in meters.")
+                .setView(radius)
+                .setPositiveButton("Save", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface dialog, int which) {
+                        int meters = current;
+                        try {
+                            meters = Integer.parseInt(radius.getText().toString().trim());
+                        } catch (Exception ignored) {
+                        }
+                        if (meters < 20) meters = 20;
+                        if (meters > 5000) meters = 5000;
+                        postPlace(id, name, lat, lon, meters);
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void postPlace(final String id, final String label, final double lat, final double lon, final int meters) {
         final String base = Net.base(this);
         if (base.isEmpty()) {
             Toast.makeText(this, "Add a server address first", Toast.LENGTH_SHORT).show();
@@ -659,11 +1030,11 @@ public class SettingsActivity extends Activity {
                 try {
                     JSONObject json = new JSONObject();
                     json.put("groupId", Prefs.group(SettingsActivity.this));
-                    json.put("id", "p" + System.currentTimeMillis());
+                    json.put("id", id);
                     json.put("name", label);
-                    json.put("lat", Prefs.lat(SettingsActivity.this));
-                    json.put("lon", Prefs.lon(SettingsActivity.this));
-                    json.put("radius", 100);
+                    json.put("lat", lat);
+                    json.put("lon", lon);
+                    json.put("radius", meters);
                     Net.Result result = Net.post(base + "/place", json.toString());
                     handler.post(new Runnable() {
                         @Override
@@ -708,5 +1079,374 @@ public class SettingsActivity extends Activity {
                 });
             }
         }).start();
+    }
+
+    private String versionName() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "2.9";
+        }
+    }
+
+    private void checkUpdates() {
+        if (updateStatus != null) updateStatus.setText("Checking the release page…");
+        updateUrl = "";
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final String found = readLatestRelease();
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (updateStatus == null) return;
+                        if (found == null) {
+                            updateStatus.setText("Could not reach the release page.");
+                            return;
+                        }
+                        if (found.startsWith("same:")) {
+                            updateStatus.setText("You're on " + found.substring(5) + ". That's the latest.");
+                            return;
+                        }
+                        int bar = found.indexOf('|');
+                        String tag = bar < 0 ? found : found.substring(0, bar);
+                        updateUrl = bar < 0 ? "" : found.substring(bar + 1);
+                        updateStatus.setText(tag + " is ready. Download and install replaces this app.");
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private String readLatestRelease() {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL("https://api.github.com/repos/i2ichardt/location-test/releases/latest").openConnection();
+            conn.setConnectTimeout(12000);
+            conn.setReadTimeout(12000);
+            conn.setRequestProperty("User-Agent", "FamilyLocation");
+            conn.setRequestProperty("Accept", "application/vnd.github+json");
+            if (conn.getResponseCode() != 200) return null;
+            InputStream in = conn.getInputStream();
+            java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+            byte[] tmp = new byte[4096];
+            int n;
+            while ((n = in.read(tmp)) >= 0) buf.write(tmp, 0, n);
+            in.close();
+            JSONObject json = new JSONObject(buf.toString("UTF-8"));
+            String tag = json.optString("tag_name", "");
+            String latest = tag.startsWith("v") || tag.startsWith("V") ? tag.substring(1) : tag;
+            JSONArray assets = json.optJSONArray("assets");
+            String url = "";
+            if (assets != null) {
+                for (int i = 0; i < assets.length(); i++) {
+                    JSONObject asset = assets.optJSONObject(i);
+                    if (asset != null && "LocationTest.apk".equals(asset.optString("name"))) {
+                        url = asset.optString("browser_download_url", "");
+                    }
+                }
+            }
+            if (compareVersions(latest, versionName()) <= 0) return "same:" + latest;
+            if (url.isEmpty()) return null;
+            return latest + "|" + url;
+        } catch (Exception e) {
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    private int compareVersions(String left, String right) {
+        String[] a = left.split("\\.");
+        String[] b = right.split("\\.");
+        int n = Math.max(a.length, b.length);
+        for (int i = 0; i < n; i++) {
+            int av = i < a.length ? parsePart(a[i]) : 0;
+            int bv = i < b.length ? parsePart(b[i]) : 0;
+            if (av != bv) return av - bv;
+        }
+        return 0;
+    }
+
+    private int parsePart(String raw) {
+        String digits = raw.replaceAll("[^0-9].*", "");
+        if (digits.isEmpty()) return 0;
+        try {
+            return Integer.parseInt(digits);
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private void downloadUpdate() {
+        if (updateStatus != null) updateStatus.setText("Downloading…");
+        final String url = updateUrl;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                boolean ok = false;
+                HttpURLConnection conn = null;
+                try {
+                    conn = (HttpURLConnection) new URL(url).openConnection();
+                    conn.setInstanceFollowRedirects(true);
+                    conn.setConnectTimeout(15000);
+                    conn.setReadTimeout(60000);
+                    conn.setRequestProperty("User-Agent", "FamilyLocation");
+                    conn.setRequestProperty("Accept", "application/octet-stream");
+                    if (conn.getResponseCode() == 200) {
+                        InputStream in = conn.getInputStream();
+                        FileOutputStream out = new FileOutputStream(new File(getCacheDir(), "update.apk"));
+                        byte[] tmp = new byte[8192];
+                        int n;
+                        while ((n = in.read(tmp)) >= 0) out.write(tmp, 0, n);
+                        out.close();
+                        in.close();
+                        ok = new File(getCacheDir(), "update.apk").length() > 10000;
+                    }
+                } catch (Exception ignored) {
+                    ok = false;
+                } finally {
+                    if (conn != null) conn.disconnect();
+                }
+                final boolean ready = ok;
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!ready) {
+                            if (updateStatus != null) updateStatus.setText("The download did not finish.");
+                            return;
+                        }
+                        installDownloaded();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void installDownloaded() {
+        if (android.os.Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+            pendingInstall = true;
+            if (updateStatus != null) updateStatus.setText("Allow installs from this app, then come back.");
+            startActivity(new android.content.Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:" + getPackageName())));
+            return;
+        }
+        File file = new File(getCacheDir(), "update.apk");
+        if (!file.exists()) return;
+        android.net.Uri uri = android.net.Uri.parse("content://com.family.locationtest.apk/update.apk");
+        android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_VIEW);
+        intent.setDataAndType(uri, "application/vnd.android.package-archive");
+        intent.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION | android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(intent);
+    }
+
+    private static final class HillsView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        HillsView(android.content.Context context) {
+            super(context);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float w = getWidth();
+            float h = getHeight();
+            paint.setColor(0xFFD5E4F8);
+            Path back = new Path();
+            back.moveTo(0, h * 0.55f);
+            back.quadTo(w * 0.25f, h * 0.15f, w * 0.5f, h * 0.48f);
+            back.quadTo(w * 0.75f, h * 0.82f, w, h * 0.35f);
+            back.lineTo(w, h);
+            back.lineTo(0, h);
+            back.close();
+            canvas.drawPath(back, paint);
+            paint.setColor(0xFFC5D8F4);
+            Path front = new Path();
+            front.moveTo(0, h * 0.72f);
+            front.quadTo(w * 0.3f, h * 0.4f, w * 0.62f, h * 0.7f);
+            front.quadTo(w * 0.82f, h * 0.88f, w, h * 0.58f);
+            front.lineTo(w, h);
+            front.lineTo(0, h);
+            front.close();
+            canvas.drawPath(front, paint);
+            paint.setColor(0xFF8FB0E4);
+            tree(canvas, w * 0.08f, h * 0.62f, h * 0.28f);
+            tree(canvas, w * 0.16f, h * 0.7f, h * 0.22f);
+            tree(canvas, w * 0.88f, h * 0.5f, h * 0.3f);
+            tree(canvas, w * 0.95f, h * 0.62f, h * 0.22f);
+        }
+
+        private void tree(Canvas canvas, float x, float base, float height) {
+            Path pine = new Path();
+            pine.moveTo(x, base - height);
+            pine.lineTo(x + height * 0.28f, base);
+            pine.lineTo(x - height * 0.28f, base);
+            pine.close();
+            canvas.drawPath(pine, paint);
+        }
+    }
+
+    private static final class GlyphBadge extends View {
+        private final int kind;
+        private final int color;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        GlyphBadge(android.content.Context context, int kind, int color) {
+            super(context);
+            this.kind = kind;
+            this.color = color;
+            int size = Math.round(46 * getResources().getDisplayMetrics().density);
+            setLayoutParams(new LinearLayout.LayoutParams(size, size));
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float w = getWidth();
+            float h = getHeight();
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(color);
+            canvas.drawCircle(w / 2f, h / 2f, Math.min(w, h) / 2f, paint);
+            paint.setColor(0xFFFFFFFF);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(Math.max(2f, w * 0.06f));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            float c = w / 2f;
+            float r = w * 0.16f;
+            if (kind == 7) {
+                paint.setStyle(Paint.Style.FILL);
+                canvas.drawCircle(c, h * 0.42f, r * 0.85f, paint);
+                canvas.drawRoundRect(new RectF(c - r, h * 0.38f, c + r, h * 0.62f), 4f, 4f, paint);
+                canvas.drawRoundRect(new RectF(c - r * 1.35f, h * 0.6f, c + r * 1.35f, h * 0.72f), 6f, 6f, paint);
+                return;
+            }
+            if (kind == 5) {
+                paint.setStyle(Paint.Style.FILL);
+                canvas.drawCircle(c, h * 0.4f, r, paint);
+                Path pin = new Path();
+                pin.moveTo(c - r, h * 0.46f);
+                pin.lineTo(c, h * 0.78f);
+                pin.lineTo(c + r, h * 0.46f);
+                pin.close();
+                canvas.drawPath(pin, paint);
+                paint.setColor(color);
+                canvas.drawCircle(c, h * 0.4f, r * 0.38f, paint);
+                return;
+            }
+            canvas.drawCircle(c, c, r * 1.15f, paint);
+        }
+    }
+
+    private static final class PillSwitch extends View {
+        interface Listener {
+            void onToggle(boolean on);
+        }
+
+        private boolean on;
+        private Listener listener;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        PillSwitch(android.content.Context context, boolean on) {
+            super(context);
+            this.on = on;
+            int w = Math.round(52 * getResources().getDisplayMetrics().density);
+            int h = Math.round(30 * getResources().getDisplayMetrics().density);
+            setLayoutParams(new LinearLayout.LayoutParams(w, h));
+            setOnClickListener(new OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    PillSwitch.this.on = !PillSwitch.this.on;
+                    invalidate();
+                    if (listener != null) listener.onToggle(PillSwitch.this.on);
+                }
+            });
+        }
+
+        void setOnToggle(Listener listener) {
+            this.listener = listener;
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float w = getWidth();
+            float h = getHeight();
+            paint.setColor(on ? 0xFF2F6BFF : 0xFFD5DDEB);
+            canvas.drawRoundRect(new RectF(0, 0, w, h), h / 2f, h / 2f, paint);
+            paint.setColor(0xFFFFFFFF);
+            float d = h - 6f;
+            float x = on ? w - d - 3f : 3f;
+            canvas.drawCircle(x + d / 2f, h / 2f, d / 2f, paint);
+        }
+    }
+
+    private static final class CheckDot extends View {
+        boolean on;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        CheckDot(android.content.Context context, boolean on) {
+            super(context);
+            this.on = on;
+            int size = Math.round(22 * getResources().getDisplayMetrics().density);
+            setLayoutParams(new LinearLayout.LayoutParams(size, size));
+        }
+
+        void setOn(boolean on) {
+            this.on = on;
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float s = Math.min(getWidth(), getHeight());
+            if (on) {
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(0xFF2F6BFF);
+                canvas.drawCircle(s / 2f, s / 2f, s / 2f, paint);
+                paint.setColor(0xFFFFFFFF);
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(2f, s * 0.1f));
+                paint.setStrokeCap(Paint.Cap.ROUND);
+                Path mark = new Path();
+                mark.moveTo(s * 0.28f, s * 0.52f);
+                mark.lineTo(s * 0.44f, s * 0.68f);
+                mark.lineTo(s * 0.74f, s * 0.34f);
+                canvas.drawPath(mark, paint);
+            } else {
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(Math.max(2f, s * 0.08f));
+                paint.setColor(0xFFC5CEDF);
+                canvas.drawCircle(s / 2f, s / 2f, s / 2f - paint.getStrokeWidth(), paint);
+            }
+        }
+    }
+
+    private static final class TrashButton extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        TrashButton(android.content.Context context) {
+            super(context);
+            int size = Math.round(40 * getResources().getDisplayMetrics().density);
+            setLayoutParams(new LinearLayout.LayoutParams(size, size));
+            setClickable(true);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float s = Math.min(getWidth(), getHeight());
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(0xFFEEF1F6);
+            canvas.drawCircle(s / 2f, s / 2f, s / 2f, paint);
+            paint.setColor(0xFF8B95AA);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(Math.max(1.6f, s * 0.045f));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            float l = s * 0.34f;
+            float r = s * 0.66f;
+            float top = s * 0.38f;
+            float bot = s * 0.7f;
+            canvas.drawRoundRect(new RectF(l, top, r, bot), 2f, 2f, paint);
+            canvas.drawLine(l - 2f, top, r + 2f, top, paint);
+            canvas.drawLine(s * 0.44f, s * 0.3f, s * 0.56f, s * 0.3f, paint);
+            canvas.drawLine(s * 0.44f, top + 4f, s * 0.44f, bot - 3f, paint);
+            canvas.drawLine(s * 0.56f, top + 4f, s * 0.56f, bot - 3f, paint);
+        }
     }
 }

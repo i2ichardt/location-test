@@ -6,27 +6,23 @@ The server is [family-location-server](https://github.com/i2ichardt/family-locat
 
 ## Download and install
 
-The compiled app is on the [v2.8 release](https://github.com/i2ichardt/location-test/releases/tag/v2.8).
+The compiled app is on the [v2.9 release](https://github.com/i2ichardt/location-test/releases/tag/v2.9).
 
-[Download LocationTest.apk](https://github.com/i2ichardt/location-test/releases/download/v2.8/LocationTest.apk)
+[Download LocationTest.apk](https://github.com/i2ichardt/location-test/releases/download/v2.9/LocationTest.apk)
 
-The installed app is named **Family** (version 2.8). Android will ask you to allow installs from the browser.
+The installed app is named **Family** (version 2.9). Android will ask you to allow installs from the browser.
 
 Allow location when the app asks. Sharing keeps a small notification so Android does not stop the updates.
 
 ## Settings
 
-Settings opens to a category menu, not one long page:
+Settings opens under the same blue header as Shared Places. Each section is a white card.
 
-- **Connection.** Home address, Tailscale address, and which one to use.
-- **Sharing.** How often your pin is sent, including a custom time.
-- **Group.** The name everyone in the family uses. This is separate from your profile.
-- **Profile.** Your name, phone number, and photo.
-- **Shared places.** Places the group can see, and alerts for this phone.
+Shared Places lists every saved spot with its picture, its arrive and leave distance, and two checks: notify when someone arrives, and notify when someone leaves. **Add Place** saves where you are. Tap the meters to change that distance. The trash button removes the place. **Notifications** turns place alerts on or off for this phone.
 
-**Back** returns to that menu without saving. **Close** on the menu leaves Settings without saving. Android's back button does the same: a category goes back to the menu, and the menu closes Settings.
+**Updates** checks the GitHub release page. If a newer app is there, it downloads it and starts the install.
 
-**Save** is at the bottom of Connection, Sharing, Group, and Profile. It commits only that page, then returns to the menu. Shared places has no Save button; a place is sent as soon as you save it with its own button.
+**Back** returns to the menu without saving. **Save** commits only that page.
 
 The phone field formats as you type. You only enter digits. A US number becomes `111-111-1111`.
 

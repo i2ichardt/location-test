@@ -29,6 +29,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.text.DateFormat;
 import java.util.Date;
 import java.util.HashMap;
@@ -358,11 +359,58 @@ public class MapActivity extends Activity {
         }
         Net.Result result = Net.getBytes(base + "/avatar?groupId=" + Net.query(Prefs.group(this)) + "&userId=" + Net.query(userId));
         if (result.error != null || result.raw == null || result.raw.length == 0) return null;
+        try {
+            FileOutputStream full = new FileOutputStream(faceFullFile(userId, stamp));
+            full.write(result.raw);
+            full.close();
+        } catch (Exception ignored) {
+        }
         Bitmap bitmap = BitmapFactory.decodeByteArray(result.raw, 0, result.raw.length);
         if (bitmap == null) return null;
-        Bitmap small = Bitmap.createScaledBitmap(bitmap, 84, 84, true);
+        Bitmap small = bitmap.getWidth() <= 96 ? bitmap : Bitmap.createScaledBitmap(bitmap, 96, 96, true);
         rememberFace(userId, stamp, small);
         return dataUrl(small);
+    }
+
+    private File faceFullFile(String userId, long stamp) {
+        return new File(getCacheDir(), "full_" + userId.replaceAll("[^A-Za-z0-9_-]", "_") + "_" + stamp + ".jpg");
+    }
+
+    private void showLargePhoto(final String userId, final long stamp) {
+        File file = faceFullFile(userId, stamp);
+        if (file.exists()) {
+            Bitmap big = BitmapFactory.decodeFile(file.getAbsolutePath());
+            if (big != null) {
+                showPhoto(big);
+                return;
+            }
+        }
+        Bitmap small = faces.get(userId);
+        if (small != null) showPhoto(small);
+        final String base = Net.base(this);
+        if (base.isEmpty()) return;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Net.Result result = Net.getBytes(base + "/avatar?groupId=" + Net.query(Prefs.group(MapActivity.this)) + "&userId=" + Net.query(userId));
+                if (result.error != null || result.raw == null || result.raw.length == 0) return;
+                try {
+                    FileOutputStream full = new FileOutputStream(faceFullFile(userId, stamp));
+                    full.write(result.raw);
+                    full.close();
+                } catch (Exception ignored) {
+                    return;
+                }
+                final Bitmap big = BitmapFactory.decodeByteArray(result.raw, 0, result.raw.length);
+                if (big == null) return;
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        showPhoto(big);
+                    }
+                });
+            }
+        }).start();
     }
 
     private String dataUrl(Bitmap bitmap) {
@@ -545,11 +593,11 @@ public class MapActivity extends Activity {
         if (faces.containsKey(userId)) face.setImageBitmap(faces.get(userId));
         else face.setBackgroundColor(0xFFE7E2D6);
         final String faceId = userId;
+        final long faceStamp = member.optLong("imageTs");
         face.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                Bitmap bitmap = faces.get(faceId);
-                if (bitmap != null) showPhoto(bitmap);
+                showLargePhoto(faceId, faceStamp);
             }
         });
         top.addView(face);

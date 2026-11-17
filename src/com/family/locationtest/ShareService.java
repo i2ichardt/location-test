@@ -222,7 +222,7 @@ public class ShareService extends Service {
 
     private String readProfileImage() {
         File file = new File(getFilesDir(), "profile.jpg");
-        if (!file.exists() || file.length() == 0 || file.length() > 400000) return null;
+        if (!file.exists() || file.length() == 0 || file.length() > 1400000) return null;
         try {
             FileInputStream in = new FileInputStream(file);
             byte[] data = new byte[(int) file.length()];
@@ -273,9 +273,10 @@ public class ShareService extends Service {
                         continue;
                     }
                     boolean was = state.optBoolean(key);
-                    if (inside && !was && wantIn) {
+                    boolean master = Prefs.placeAlerts(this);
+                    if (inside && !was && wantIn && master) {
                         alert(who + " arrived at " + place.optString("name"));
-                    } else if (!inside && was && wantOut) {
+                    } else if (!inside && was && wantOut && master) {
                         alert(who + " left " + place.optString("name"));
                     }
                     state.put(key, inside);
