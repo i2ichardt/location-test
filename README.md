@@ -6,11 +6,11 @@ The server is [family-location-server](https://github.com/i2ichardt/family-locat
 
 ## Download and install
 
-The compiled app is on the [v2.9 release](https://github.com/i2ichardt/location-test/releases/tag/v2.9).
+The compiled app is on the [v2.10 release](https://github.com/i2ichardt/location-test/releases/tag/v2.10).
 
-[Download LocationTest.apk](https://github.com/i2ichardt/location-test/releases/download/v2.9/LocationTest.apk)
+[Download LocationTest.apk](https://github.com/i2ichardt/location-test/releases/download/v2.10/LocationTest.apk)
 
-The installed app is named **Family** (version 2.9). Android will ask you to allow installs from the browser.
+The installed app is named **Family** (version 2.10). Android will ask you to allow installs from the browser.
 
 Allow location when the app asks. Sharing keeps a small notification so Android does not stop the updates.
 
@@ -22,7 +22,7 @@ Shared Places lists every saved spot with its picture, its arrive and leave dist
 
 **Updates** checks the GitHub release page. If a newer app is there, it downloads it and starts the install.
 
-**Back** returns to the menu without saving. **Save** commits only that page.
+**Back** is the large round arrow fixed at the top left. It returns to the menu without saving, and it stays there while the page scrolls. **Save** commits only that page.
 
 The phone field formats as you type. You only enter digits. A US number becomes `111-111-1111`.
 
@@ -39,6 +39,8 @@ Your photo, and everyone else's, sits on the pin. **Satellite** switches to aeri
 **People** is the handle at the bottom. Tap the handle, or the "People in your group" title, and the list opens or closes all the way. Drag the handle or drag a person in the list and the panel follows your finger. The list still scrolls when it is open and does not fit. Each person shows how far away they are. Battery is a phone-style icon with the percent at the top right of that person's panel. **Center** moves the map to them. **Directions** opens Google Maps with a route ready to start. **Call** and **Text** use the phone. Tap a profile photo for a larger picture. Tap or swipe that picture to close it.
 
 The line at the top left, **Home · 3 people** (or Tailscale), is a button. Tap it and the map frames everyone in the group who has a pin.
+
+Tap a person while the map is zoomed out and it zooms back in. If that person is traveling, the map stays centered on them until you close their card. The arrived time does not reset to "just now" while they are still moving. "Here with you" is only for someone else standing next to you.
 
 Tapping a person pin opens a card. Swipe anywhere on the card to close it, or tap that person again. **Directions** starts a Google Maps route. Times read as hours and minutes, not a long count of minutes.
 

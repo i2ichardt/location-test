@@ -222,7 +222,14 @@ function setPlaces(list) {
 
 function showPerson(lat, lon) {
   focused = true;
-  map.setView([lat, lon], 16);
+  var z = map.getZoom();
+  if (z < 15) z = 16;
+  map.setView([lat, lon], z);
+}
+function followPerson(lat, lon, zoomIn) {
+  focused = true;
+  if (zoomIn && map.getZoom() < 15) map.setView([lat, lon], 16);
+  else map.panTo([lat, lon], { animate: true });
 }
 function fitGroup() {
   var pts = [];

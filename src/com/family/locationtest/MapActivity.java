@@ -264,6 +264,7 @@ public class MapActivity extends Activity {
                 pin.put("lat", member.optDouble("lat"));
                 pin.put("lon", member.optDouble("lon"));
                 pin.put("letter", name.isEmpty() ? "?" : name.substring(0, 1).toUpperCase());
+                pin.put("traveling", member.optBoolean("traveling"));
                 long imageTs = member.optLong("imageTs");
                 boolean hasImage = member.optBoolean("hasImage");
                 if (hasImage && ensureFace(userId, imageTs)) {
@@ -781,6 +782,7 @@ public class MapActivity extends Activity {
 
     private String extraLine(JSONObject member) {
         if (!member.optBoolean("hasLoc")) return "";
+        if (member.optString("userId").equals(Prefs.userId(this))) return "";
         return awayText(member.optDouble("lat"), member.optDouble("lon"));
     }
 
@@ -941,7 +943,13 @@ public class MapActivity extends Activity {
         });
         personCard.setVisibility(View.VISIBLE);
         followCurtain();
-        if (moveMap && hasLoc && pageReady) map.evaluateJavascript("showPerson(" + lat + "," + lon + ")", null);
+        if (!hasLoc || !pageReady) return;
+        boolean traveling = member.optBoolean("traveling");
+        if (traveling) {
+            map.evaluateJavascript("followPerson(" + lat + "," + lon + "," + (moveMap ? "true" : "false") + ")", null);
+        } else if (moveMap) {
+            map.evaluateJavascript("showPerson(" + lat + "," + lon + ")", null);
+        }
     }
 
     private class Bridge {

@@ -515,22 +515,7 @@ public class SettingsActivity extends Activity {
         head.addView(art, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(236)));
         LinearLayout words = new LinearLayout(this);
         words.setOrientation(LinearLayout.VERTICAL);
-        int topPad = back ? dp(16) : dp(40);
-        words.setPadding(dp(20), topPad, dp(132), dp(36));
-        if (back) {
-            TextView arrow = new TextView(this);
-            arrow.setText("←");
-            arrow.setTextColor(0xFFFFFFFF);
-            arrow.setTextSize(28);
-            arrow.setPadding(dp(2), dp(4), dp(16), dp(8));
-            arrow.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    showHub();
-                }
-            });
-            words.addView(arrow);
-        }
+        words.setPadding(dp(20), dp(40), dp(132), dp(36));
         TextView heading = new TextView(this);
         heading.setText(title);
         heading.setTextColor(0xFFFFFFFF);
@@ -558,6 +543,19 @@ public class SettingsActivity extends Activity {
         ScrollView scroll = pageScroll();
         scroll.addView(column);
         frame.addView(scroll, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        if (back) {
+            BackChevron backBtn = new BackChevron(this);
+            FrameLayout.LayoutParams backLp = new FrameLayout.LayoutParams(dp(112), dp(112), Gravity.TOP | Gravity.START);
+            backLp.leftMargin = dp(8);
+            backLp.topMargin = dp(8);
+            backBtn.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    showHub();
+                }
+            });
+            frame.addView(backBtn, backLp);
+        }
         root.removeAllViews();
         root.addView(frame);
     }
@@ -1237,6 +1235,38 @@ public class SettingsActivity extends Activity {
         intent.setDataAndType(uri, "application/vnd.android.package-archive");
         intent.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION | android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(intent);
+    }
+
+    private static final class BackChevron extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        BackChevron(android.content.Context context) {
+            super(context);
+            setClickable(true);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float w = getWidth();
+            float h = getHeight();
+            float cx = w / 2f;
+            float cy = h / 2f;
+            float radius = Math.min(w, h) * 0.46f;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(0xF5FFFFFF);
+            canvas.drawCircle(cx, cy, radius, paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+            paint.setStrokeWidth(Math.max(10f, w * 0.1f));
+            paint.setColor(0xFF1B3A6B);
+            float arm = radius * 0.46f;
+            Path chevron = new Path();
+            chevron.moveTo(cx + arm * 0.38f, cy - arm);
+            chevron.lineTo(cx - arm * 0.52f, cy);
+            chevron.lineTo(cx + arm * 0.38f, cy + arm);
+            canvas.drawPath(chevron, paint);
+        }
     }
 
     private static final class HillsView extends View {
