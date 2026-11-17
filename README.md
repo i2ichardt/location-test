@@ -6,11 +6,11 @@ The server is [family-location-server](https://github.com/i2ichardt/family-locat
 
 ## Download and install
 
-The compiled app is on the [v2.6 release](https://github.com/i2ichardt/location-test/releases/tag/v2.6).
+The compiled app is on the [v2.7 release](https://github.com/i2ichardt/location-test/releases/tag/v2.7).
 
-[Download LocationTest.apk](https://github.com/i2ichardt/location-test/releases/download/v2.6/LocationTest.apk)
+[Download LocationTest.apk](https://github.com/i2ichardt/location-test/releases/download/v2.7/LocationTest.apk)
 
-The installed app is named **Family** (version 2.6). Android will ask you to allow installs from the browser.
+The installed app is named **Family** (version 2.7). Android will ask you to allow installs from the browser.
 
 Allow location when the app asks. Sharing keeps a small notification so Android does not stop the updates.
 
@@ -40,11 +40,11 @@ The map is the whole screen. Pinch to zoom. There are no +/- buttons.
 
 Your photo, and everyone else's, sits on the pin. **Satellite** switches to aerial photos. Tap it again for the street map. The app opens in the same view next time.
 
-**People** is the handle at the bottom. Pull that handle and the panel slides with your finger. It stays where you let go. Only the handle moves it. The list under the handle scrolls when the family does not fit. Each person has **Center**, **View**, **Call**, and **Text**. Center moves the map to them and does not open Street View.
+**People** is the handle at the bottom. Tap it to open or close the list all the way. Drag the handle, or drag a person in the list, and the panel follows. The list still scrolls when it is open and does not fit. Each person shows how far away they are and their battery. **Center** moves the map to them. **Directions** opens Google Maps with a route ready to start. **Call** and **Text** use the phone. Tap a profile photo for a larger picture. Tap or swipe that picture to close it.
 
-Tapping a person pin does not open Street View immediately. It shows a card with their name, when they arrived, and how long they have been at that area (or "this spot"), plus **View**, **Call**, and **Text**. Swipe the card left or right to close it, or tap that person again. **View** opens the Google panorama. **Call** opens the phone dialer. **Text** opens a message.
+Tapping a person pin opens a card. Swipe anywhere on the card to close it, or tap that person again. **Directions** starts a Google Maps route. Times read as hours and minutes, not a long count of minutes.
 
-The map tiles are OpenStreetMap. Street View opens Google Maps, so no Maps key is stored in the app.
+People at the same spot share one map bubble. Their photos sit next to each other and do not overlap. A new profile photo replaces the old one on the map.
 
 ## Shared places
 

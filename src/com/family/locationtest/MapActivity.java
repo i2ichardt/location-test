@@ -20,6 +20,7 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -28,6 +29,7 @@ import java.io.File;
 import java.text.DateFormat;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Locale;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -48,6 +50,10 @@ public class MapActivity extends Activity {
     private boolean sheetOpen;
     private boolean curtainDrag;
     private boolean curtainAnimating;
+    private float curtainAnchorY;
+    private float curtainAnchorTy;
+    private FrameLayout photoPop;
+    private ImageView photoPopImage;
     private boolean curtainWaiting;
     private float curtainClosed;
     private float curtainY = -1f;
@@ -104,56 +110,36 @@ public class MapActivity extends Activity {
         final Button satelliteButton = findViewById(R.id.satelliteButton);
         satelliteButton.setText(satellite ? "Map" : "Satellite");
         sheet.setTranslationY(4000);
-        peopleTab.setOnTouchListener(new View.OnTouchListener() {
-            float anchorY;
-            float anchorTy;
-            VelocityTracker velocity;
+        ((CurtainSheet) sheet).setPull(new CurtainSheet.Pull() {
+            @Override
+            public void onDown(float rawY) {
+                curtainAnchorY = rawY;
+                curtainAnchorTy = sheet.getTranslationY();
+            }
 
             @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                int action = event.getAction();
-                if (action == MotionEvent.ACTION_DOWN) {
+            public void onMove(float rawY) {
+                if (!curtainDrag) {
                     curtainDrag = true;
                     curtainAnimating = false;
                     sheet.animate().cancel();
-                    anchorY = event.getRawY();
-                    anchorTy = sheet.getTranslationY();
-                    if (velocity != null) velocity.recycle();
-                    velocity = VelocityTracker.obtain();
-                    velocity.addMovement(event);
-                    return true;
                 }
-                if (action == MotionEvent.ACTION_MOVE) {
-                    if (velocity != null) velocity.addMovement(event);
-                    float next = anchorTy + (event.getRawY() - anchorY);
-                    if (next < 0) next = 0;
-                    if (next > curtainClosed) next = curtainClosed;
-                    curtainY = next;
-                    sheet.setTranslationY(next);
-                    followCurtain();
-                    return true;
-                }
-                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                    float vy = 0;
-                    if (velocity != null) {
-                        velocity.addMovement(event);
-                        velocity.computeCurrentVelocity(1000);
-                        vy = velocity.getYVelocity();
-                        velocity.recycle();
-                        velocity = null;
-                    }
-                    curtainDrag = false;
-                    float y = sheet.getTranslationY();
-                    float target = y;
-                    if (vy < -1400) target = 0;
-                    else if (vy > 1400) target = curtainClosed;
-                    else if (y < dp(24)) target = 0;
-                    else if (curtainClosed - y < dp(24)) target = curtainClosed;
-                    sheetOpen = target < curtainClosed * 0.5f;
-                    slideCurtain(target, target == y ? 0 : 160);
-                    return true;
-                }
-                return true;
+                float next = curtainAnchorTy + (rawY - curtainAnchorY);
+                if (next < 0) next = 0;
+                if (next > curtainClosed) next = curtainClosed;
+                curtainY = next;
+                sheet.setTranslationY(next);
+                followCurtain();
+            }
+
+            @Override
+            public void onUp(float rawY, boolean tap) {
+                curtainDrag = false;
+                boolean open;
+                if (tap) open = sheet.getTranslationY() > curtainClosed * 0.5f;
+                else open = sheet.getTranslationY() < curtainClosed * 0.5f;
+                sheetOpen = open;
+                slideCurtain(open ? 0 : curtainClosed, 180);
             }
         });
         satelliteButton.setOnClickListener(new View.OnClickListener() {
@@ -488,6 +474,14 @@ public class MapActivity extends Activity {
             java.io.FileOutputStream out = new java.io.FileOutputStream(faceFile(userId, stamp));
             bitmap.compress(Bitmap.CompressFormat.JPEG, 80, out);
             out.close();
+            File[] old = getCacheDir().listFiles();
+            String prefix = "face_" + userId.replaceAll("[^A-Za-z0-9_-]", "_") + "_";
+            String keep = faceFile(userId, stamp).getName();
+            if (old != null) {
+                for (int i = 0; i < old.length; i++) {
+                    if (old[i].getName().startsWith(prefix) && !old[i].getName().equals(keep)) old[i].delete();
+                }
+            }
         } catch (Exception ignored) {
         }
     }
@@ -540,6 +534,14 @@ public class MapActivity extends Activity {
         String userId = member.optString("userId");
         if (faces.containsKey(userId)) face.setImageBitmap(faces.get(userId));
         else face.setBackgroundColor(0xFFE7E2D6);
+        final String faceId = userId;
+        face.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Bitmap bitmap = faces.get(faceId);
+                if (bitmap != null) showPhoto(bitmap);
+            }
+        });
         top.addView(face);
 
         LinearLayout words = new LinearLayout(this);
@@ -576,10 +578,10 @@ public class MapActivity extends Activity {
                 centerOn(lat, lon);
             }
         }));
-        if (hasLoc) actions.addView(wideButton("View", new View.OnClickListener() {
+        if (hasLoc) actions.addView(wideButton("Directions", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                openStreet(lat, lon);
+                openTrip(lat, lon);
             }
         }));
         actions.addView(wideButton("Call", new View.OnClickListener() {
@@ -672,8 +674,14 @@ public class MapActivity extends Activity {
     private void fillStatus(JSONObject member, TextView line1, TextView line2) {
         if (!member.optBoolean("hasLoc")) {
             line1.setText("No location yet");
-            line2.setText("");
-            line2.setVisibility(View.GONE);
+            int battery = member.optInt("battery", -1);
+            if (battery >= 0) {
+                line2.setText("Battery " + battery + "%");
+                line2.setVisibility(View.VISIBLE);
+            } else {
+                line2.setText("");
+                line2.setVisibility(View.GONE);
+            }
             return;
         }
         line2.setVisibility(View.VISIBLE);
@@ -686,16 +694,106 @@ public class MapActivity extends Activity {
             String from = member.optString("departedFrom", "");
             if (from.isEmpty()) from = "this spot";
             line1.setText("Traveling at " + mph + " MPH");
-            line2.setText(mins < 1 ? "Departed from " + from + " - just now" : "Departed from " + from + " - " + mins + " mins ago");
+            String departedLine = mins < 1 ? "Departed from " + from + " - just now" : "Departed from " + from + " - " + agoPhrase(mins);
+            String more = extraLine(member);
+            line2.setText(more.isEmpty() ? departedLine : departedLine + "\n" + more);
             return;
         }
         long arrived = member.optLong("arrived", member.optLong("ts"));
         long mins = arrived > 0 && now > arrived ? (now - arrived) / 60L : 0;
         String area = member.optString("area", "");
         if (area.isEmpty()) area = "this spot";
-        line1.setText(mins < 1 ? "Arrived to " + area + " - just now" : "Arrived to " + area + " - " + mins + " mins ago");
-        line2.setText("");
-        line2.setVisibility(View.GONE);
+        line1.setText(mins < 1 ? "Arrived to " + area + " - just now" : "Arrived to " + area + " - " + agoPhrase(mins));
+        String more = extraLine(member);
+        if (more.isEmpty()) {
+            line2.setText("");
+            line2.setVisibility(View.GONE);
+        } else {
+            line2.setText(more);
+            line2.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private String agoPhrase(long mins) {
+        if (mins < 60) return mins + (mins == 1 ? " min ago" : " mins ago");
+        long hours = mins / 60;
+        long rest = mins % 60;
+        String text = hours + (hours == 1 ? " hour" : " hours");
+        if (rest > 0) text += " " + rest + (rest == 1 ? " min" : " mins");
+        return text + " ago";
+    }
+
+    private String extraLine(JSONObject member) {
+        StringBuilder out = new StringBuilder();
+        if (member.optBoolean("hasLoc")) {
+            String away = awayText(member.optDouble("lat"), member.optDouble("lon"));
+            if (!away.isEmpty()) out.append(away);
+        }
+        int battery = member.optInt("battery", -1);
+        if (battery >= 0) {
+            if (out.length() > 0) out.append("\n");
+            out.append("Battery ").append(battery).append("%");
+        }
+        return out.toString();
+    }
+
+    private String awayText(double lat, double lon) {
+        if (!Prefs.hasFix(this) || Double.isNaN(lat) || Double.isNaN(lon)) return "";
+        double meters = haversine(Prefs.lat(this), Prefs.lon(this), lat, lon);
+        if (meters < 30) return "Here with you";
+        if (meters < 160) return Math.round(meters * 3.28084) + " ft away";
+        double miles = meters / 1609.344;
+        if (miles < 10) return String.format(Locale.US, "%.1f miles away", miles);
+        return Math.round(miles) + " miles away";
+    }
+
+    private static double haversine(double lat1, double lon1, double lat2, double lon2) {
+        double r = 6371000.0;
+        double p1 = Math.toRadians(lat1);
+        double p2 = Math.toRadians(lat2);
+        double dphi = Math.toRadians(lat2 - lat1);
+        double dl = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dphi / 2) * Math.sin(dphi / 2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+        return 2 * r * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    private void showPhoto(Bitmap bitmap) {
+        if (photoPop == null) {
+            photoPop = new FrameLayout(this);
+            photoPop.setBackgroundColor(0xE61A1916);
+            photoPopImage = new ImageView(this);
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+            int gap = dp(36);
+            lp.setMargins(gap, dp(72), gap, dp(72));
+            photoPopImage.setLayoutParams(lp);
+            photoPopImage.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            photoPop.addView(photoPopImage);
+            addContentView(photoPop, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            photoPop.setOnTouchListener(new View.OnTouchListener() {
+                float x;
+                float y;
+                @Override
+                public boolean onTouch(View v, MotionEvent event) {
+                    if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                        x = event.getRawX();
+                        y = event.getRawY();
+                        return true;
+                    }
+                    if (event.getAction() == MotionEvent.ACTION_UP) {
+                        float dx = event.getRawX() - x;
+                        float dy = event.getRawY() - y;
+                        if (Math.abs(dx) > dp(24) || Math.abs(dy) > dp(24) || (Math.abs(dx) < dp(12) && Math.abs(dy) < dp(12))) {
+                            photoPop.setVisibility(View.GONE);
+                        }
+                        return true;
+                    }
+                    return true;
+                }
+            });
+        }
+        photoPopImage.setImageBitmap(bitmap);
+        photoPop.setVisibility(View.VISIBLE);
+        photoPop.bringToFront();
     }
 
     private void bindPersonCard(final JSONObject member, boolean moveMap) {
@@ -708,7 +806,7 @@ public class MapActivity extends Activity {
         findViewById(R.id.cardView).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (hasLoc) openStreet(lat, lon);
+                if (hasLoc) openTrip(lat, lon);
             }
         });
         findViewById(R.id.cardCall).setOnClickListener(new View.OnClickListener() {

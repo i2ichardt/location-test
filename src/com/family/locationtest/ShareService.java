@@ -12,6 +12,7 @@ import android.content.pm.ServiceInfo;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -179,6 +180,8 @@ public class ShareService extends Service {
             json.put("lon", location.getLongitude());
             json.put("ts", System.currentTimeMillis() / 1000L);
             if (location.hasSpeed()) json.put("speed", location.getSpeed());
+            int battery = batteryPercent();
+            if (battery >= 0) json.put("battery", battery);
             Net.Result result = Net.post(base + "/send", json.toString());
             if (result.error == null && result.code >= 200 && result.code < 300) {
                 goForeground("Sharing with " + Prefs.group(this));
@@ -187,6 +190,18 @@ public class ShareService extends Service {
         } catch (Exception ignored) {
         }
         return false;
+    }
+
+    private int batteryPercent() {
+        try {
+            BatteryManager battery = (BatteryManager) getSystemService(BATTERY_SERVICE);
+            if (battery == null) return -1;
+            int pct = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
+            if (pct < 0 || pct > 100) return -1;
+            return pct;
+        } catch (Exception e) {
+            return -1;
+        }
     }
 
     private void sendProfile() {

@@ -14,10 +14,12 @@ public class SwipeCard extends LinearLayout {
 
     public SwipeCard(Context context) {
         super(context);
+        setClickable(true);
     }
 
     public SwipeCard(Context context, AttributeSet attrs) {
         super(context, attrs);
+        setClickable(true);
     }
 
     public void setOnDismiss(Runnable onDismiss) {

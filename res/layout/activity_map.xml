@@ -109,7 +109,7 @@
                 android:layout_weight="1"
                 android:background="@drawable/pill_light"
                 android:stateListAnimator="@null"
-                android:text="View"
+                android:text="Directions"
                 android:textAllCaps="false"
                 android:textColor="#1C1B19" />
 
@@ -138,7 +138,7 @@
         </LinearLayout>
     </com.family.locationtest.SwipeCard>
 
-    <LinearLayout
+    <com.family.locationtest.CurtainSheet
         android:id="@+id/sheet"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -195,5 +195,5 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />
         </ScrollView>
-    </LinearLayout>
+    </com.family.locationtest.CurtainSheet>
 </FrameLayout>

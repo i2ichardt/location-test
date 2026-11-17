@@ -42,63 +42,120 @@ function setSatellite(on) {
 var markers = {};
 var focused = false;
 
-function iconFor(person) {
-  if (person.icon) {
-    return L.icon({
-      iconUrl: person.icon,
-      iconSize: [42, 42],
-      iconAnchor: [21, 21],
-      className: 'pin-icon'
-    });
-  }
-  if (person.waitImage) {
-    return L.divIcon({
-      className: '',
-      html: '<div style="width:36px;height:36px;border-radius:18px;background:transparent;border:2px solid rgba(26,25,22,0.28)"></div>',
-      iconSize: [36, 36],
-      iconAnchor: [18, 18]
-    });
-  }
-  return L.divIcon({
-    className: '',
-    html: '<div style="width:36px;height:36px;border-radius:18px;background:#C8102E;color:#fff;text-align:center;line-height:36px;font-weight:700;border:2px solid #1A1916">' +
-      (person.letter || '?') + '</div>',
-    iconSize: [36, 36],
-    iconAnchor: [18, 18]
+function metersApart(a, b) {
+  var r = 6371000;
+  var p1 = a.lat * Math.PI / 180;
+  var p2 = b.lat * Math.PI / 180;
+  var dp = (b.lat - a.lat) * Math.PI / 180;
+  var dl = (b.lon - a.lon) * Math.PI / 180;
+  var x = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+  return 2 * r * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+function escapeHtml(text) {
+  return String(text || '').replace(/[&<>"']/g, function (c) {
+    if (c === '&') return '&';
+    if (c === '<') return '<';
+    if (c === '>') return '>';
+    if (c === '"') return '"';
+    return '&#39;';
   });
 }
 
-function setPeople(list) {
-  var seen = {};
-  var bounds = [];
+function faceHtml(person) {
+  var id = escapeHtml(person.userId);
+  if (person.icon) {
+    return '<img data-id="' + id + '" src="' + person.icon + '" style="width:40px;height:40px;border-radius:20px;object-fit:cover;border:2px solid #fff;background:#F4F1EA;display:block">';
+  }
+  var letter = escapeHtml(person.letter || '?');
+  var bg = person.waitImage ? 'transparent' : '#C8102E';
+  var color = person.waitImage ? '#1A1916' : '#fff';
+  return '<div data-id="' + id + '" style="width:40px;height:40px;border-radius:20px;background:' + bg + ';color:' + color + ';text-align:center;line-height:36px;font-weight:700;border:2px solid #fff;box-sizing:border-box">' + letter + '</div>';
+}
+
+function soloIcon(person) {
+  return iconFor(person);
+}
+
+function bubbleIcon(people) {
+  var faces = '';
+  for (var i = 0; i < people.length; i++) {
+    if (i) faces += '<div style="width:6px;flex:0 0 6px"></div>';
+    faces += faceHtml(people[i]);
+  }
+  var w = people.length * 40 + (people.length - 1) * 6 + 20;
+  var h = 78;
+  var html = '<div style="width:' + w + 'px;height:' + h + 'px">'
+    + '<div style="display:flex;flex-direction:row;align-items:center;background:#fff;border-radius:30px;padding:8px 10px;box-shadow:0 2px 8px rgba(26,25,22,.28)">'
+    + faces + '</div>'
+    + '<div style="width:0;height:0;margin-left:' + Math.round(w / 2 - 8) + 'px;border-left:8px solid transparent;border-right:8px solid transparent;border-top:12px solid #fff"></div>'
+    + '</div>';
+  return L.divIcon({ className: '', html: html, iconSize: [w, h], iconAnchor: [Math.round(w / 2), h - 2] });
+}
+
+function clusterOf(list) {
+  var clusters = [];
   for (var i = 0; i < list.length; i++) {
     var p = list[i];
     if (typeof p.lat !== 'number' || typeof p.lon !== 'number') continue;
-    seen[p.userId] = true;
-    bounds.push([p.lat, p.lon]);
-    var marker = markers[p.userId];
+    var found = -1;
+    for (var c = 0; c < clusters.length; c++) {
+      if (metersApart(clusters[c], p) <= 50) { found = c; break; }
+    }
+    if (found < 0) clusters.push({ lat: p.lat, lon: p.lon, people: [p] });
+    else clusters[found].people.push(p);
+  }
+  return clusters;
+}
+
+function iconSig(people) {
+  var parts = [];
+  for (var i = 0; i < people.length; i++) parts.push((people[i].userId || '') + ':' + (people[i].icon || people[i].letter || ''));
+  return parts.join('|');
+}
+
+function clickedId(event, fallback) {
+  var t = event && event.originalEvent ? event.originalEvent.target : null;
+  while (t && t.getAttribute) {
+    var id = t.getAttribute('data-id');
+    if (id) return id;
+    t = t.parentNode;
+  }
+  return fallback || '';
+}
+
+function setPeople(list) {
+  var clusters = clusterOf(list || []);
+  var seen = {};
+  var bounds = [];
+  for (var i = 0; i < clusters.length; i++) {
+    var cluster = clusters[i];
+    var ids = [];
+    for (var p = 0; p < cluster.people.length; p++) ids.push(cluster.people[p].userId);
+    ids.sort();
+    var key = ids.join('|');
+    seen[key] = true;
+    bounds.push([cluster.lat, cluster.lon]);
+    var sig = iconSig(cluster.people);
+    var icon = cluster.people.length > 1 ? bubbleIcon(cluster.people) : soloIcon(cluster.people[0]);
+    var marker = markers[key];
     if (!marker) {
-      marker = L.marker([p.lat, p.lon], { icon: iconFor(p) });
-      marker._iconUrl = p.icon || '';
-      marker.bindTooltip(p.name || 'Someone', { direction: 'top', offset: [0, -16] });
-      (function (id) {
-        marker.on('click', function () {
-          if (window.Android) Android.personClicked(id);
+      marker = L.marker([cluster.lat, cluster.lon], { icon: icon });
+      marker._sig = sig;
+      (function (group) {
+        marker.on('click', function (ev) {
+          var id = clickedId(ev, group[0].userId);
+          if (window.Android && id) Android.personClicked(id);
         });
-      })(p.userId);
+      })(cluster.people);
       marker.addTo(map);
-      markers[p.userId] = marker;
+      markers[key] = marker;
     } else {
-      marker.setLatLng([p.lat, p.lon]);
-      if (p.icon) {
-        if (marker._iconUrl !== p.icon) {
-          marker.setIcon(iconFor(p));
-          marker._iconUrl = p.icon;
-        }
-      } else if (!marker._iconUrl) {
-        marker.setIcon(iconFor(p));
+      marker.setLatLng([cluster.lat, cluster.lon]);
+      if (marker._sig !== sig) {
+        marker.setIcon(icon);
+        marker._sig = sig;
       }
-      marker.setTooltipContent(p.name || 'Someone');
     }
   }
   Object.keys(markers).forEach(function (id) {
@@ -110,8 +167,33 @@ function setPeople(list) {
   if (!focused && bounds.length) {
     focused = true;
     if (bounds.length === 1) map.setView(bounds[0], 15);
-    else map.fitBounds(bounds, { padding: [40, 40] });
+    else map.fitBounds(bounds, { padding: [48, 48] });
   }
+}
+function iconFor(person) {
+  if (person.icon) {
+    return L.icon({
+      iconUrl: person.icon,
+      iconSize: [42, 42],
+      iconAnchor: [21, 42],
+      className: 'pin-icon'
+    });
+  }
+  if (person.waitImage) {
+    return L.divIcon({
+      className: '',
+      html: '<div style="width:36px;height:36px;border-radius:18px;background:transparent;border:2px solid rgba(26,25,22,0.28)"></div>',
+      iconSize: [36, 36],
+      iconAnchor: [18, 36]
+    });
+  }
+  return L.divIcon({
+    className: '',
+    html: '<div style="width:36px;height:36px;border-radius:18px;background:#C8102E;color:#fff;text-align:center;line-height:36px;font-weight:700;border:2px solid #1A1916">' +
+      (person.letter || '?') + '</div>',
+    iconSize: [36, 36],
+    iconAnchor: [18, 36]
+  });
 }
 
 var placeMarks = [];
@@ -122,9 +204,7 @@ function setPlaces(list) {
   for (var i = 0; i < list.length; i++) {
     var p = list[i];
     if (typeof p.lat !== 'number' || typeof p.lon !== 'number') continue;
-    var safe = String(p.name || 'Place').replace(/[&<>]/g, function (c) {
-      return c === '&' ? '&' : (c === '<' ? '<' : '>');
-    });
+    var safe = escapeHtml(p.name || 'Place');
     var mark = L.marker([p.lat, p.lon], {
       interactive: false,
       keyboard: false,

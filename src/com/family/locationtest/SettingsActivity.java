@@ -135,19 +135,22 @@ public class SettingsActivity extends Activity {
         final RadioButton fast = radio("Fast updates");
         final RadioButton slow = radio("Slow updates");
         final RadioButton custom = radio("Custom");
+        fast.setId(View.generateViewId());
+        slow.setId(View.generateViewId());
+        custom.setId(View.generateViewId());
         String pace = Prefs.pace(this);
         if ("slow".equals(pace)) slow.setChecked(true);
         else if ("custom".equals(pace)) custom.setChecked(true);
         else fast.setChecked(true);
         RadioGroup paceGroup = new RadioGroup(this);
         paceGroup.addView(fast);
-        paceGroup.addView(hint("Every 30 seconds while moving, every 5 minutes while still."));
         paceGroup.addView(slow);
-        paceGroup.addView(hint("Every 1–2 minutes while moving, every 15 minutes while still."));
         paceGroup.addView(custom);
         final EditText every = field(String.valueOf(Prefs.sp(this).getInt("customEvery", 30)), "30", InputType.TYPE_CLASS_NUMBER);
         final RadioButton seconds = radio("Seconds");
         final RadioButton minutes = radio("Minutes");
+        seconds.setId(View.generateViewId());
+        minutes.setId(View.generateViewId());
         if ("min".equals(Prefs.sp(this).getString("customUnit", "sec"))) minutes.setChecked(true);
         else seconds.setChecked(true);
         RadioGroup unit = new RadioGroup(this);
@@ -184,6 +187,7 @@ public class SettingsActivity extends Activity {
         });
         body.addView(share);
         body.addView(paceGroup);
+        body.addView(hint("Fast is every 30 seconds while moving and every 5 minutes while still. Slow is every 1–2 minutes while moving and every 15 minutes while still. Custom uses the amount below. Only one of these can be on."));
         body.addView(label("Custom amount"));
         body.addView(every);
         body.addView(unit);
@@ -629,7 +633,7 @@ public class SettingsActivity extends Activity {
         name.setHint("Home, school, work");
         new AlertDialog.Builder(this)
                 .setTitle("Save this place")
-                .setMessage("Uses your latest location. About 100 meters across. It is sent to the group right away.")
+                .setMessage("Uses your latest location. The distance for arriving and leaving is set per place on the PC.")
                 .setView(name)
                 .setPositiveButton("Save", new android.content.DialogInterface.OnClickListener() {
                     @Override

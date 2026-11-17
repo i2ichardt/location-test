@@ -17,4 +17,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             LocationTest.apk \
             --title "Family ${GITHUB_REF_NAME#v}" \
-            --notes "Compiled phone app. Satellite or street map is remembered. Pull the People handle and the list stays where you leave it. The list scrolls. Swipe a person card sideways to close it. Center moves the map without opening Street View."
+            --notes "Family 2.7. Directions opens a Google Maps route. People at the same spot share one bubble. Tap People to open or close the list. Battery, distance, and updated profile photos are on each person."
