@@ -224,6 +224,17 @@ function showPerson(lat, lon) {
   focused = true;
   map.setView([lat, lon], 16);
 }
+function fitGroup() {
+  var pts = [];
+  Object.keys(markers).forEach(function (id) {
+    var ll = markers[id].getLatLng();
+    pts.push([ll.lat, ll.lng]);
+  });
+  if (!pts.length) return;
+  focused = true;
+  if (pts.length === 1) map.setView(pts[0], 15);
+  else map.fitBounds(pts, { paddingTopLeft: [28, 72], paddingBottomRight: [28, 120], maxZoom: 16 });
+}
 </script>
 </body>
 </html>

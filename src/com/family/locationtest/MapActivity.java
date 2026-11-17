@@ -7,6 +7,9 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -161,6 +164,12 @@ public class MapActivity extends Activity {
             @Override
             public void run() {
                 placeCurtain(false);
+            }
+        });
+        statusText.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (pageReady) map.evaluateJavascript("fitGroup()", null);
             }
         });
         askPermissions();
@@ -521,6 +530,7 @@ public class MapActivity extends Activity {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setBackgroundResource(R.drawable.card_bg);
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setClickable(true);
         LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         cardLp.bottomMargin = dp(10);
         card.setLayoutParams(cardLp);
@@ -562,7 +572,11 @@ public class MapActivity extends Activity {
         words.addView(name);
         words.addView(line1);
         words.addView(line2);
+        LinearLayout.LayoutParams wordsLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        words.setLayoutParams(wordsLp);
         top.addView(words);
+        int battery = member.optInt("battery", -1);
+        if (battery >= 0) top.addView(batteryBadge(battery));
         card.addView(top);
 
         final double lat = member.optDouble("lat", Double.NaN);
@@ -674,14 +688,8 @@ public class MapActivity extends Activity {
     private void fillStatus(JSONObject member, TextView line1, TextView line2) {
         if (!member.optBoolean("hasLoc")) {
             line1.setText("No location yet");
-            int battery = member.optInt("battery", -1);
-            if (battery >= 0) {
-                line2.setText("Battery " + battery + "%");
-                line2.setVisibility(View.VISIBLE);
-            } else {
-                line2.setText("");
-                line2.setVisibility(View.GONE);
-            }
+            line2.setText("");
+            line2.setVisibility(View.GONE);
             return;
         }
         line2.setVisibility(View.VISIBLE);
@@ -724,17 +732,75 @@ public class MapActivity extends Activity {
     }
 
     private String extraLine(JSONObject member) {
-        StringBuilder out = new StringBuilder();
-        if (member.optBoolean("hasLoc")) {
-            String away = awayText(member.optDouble("lat"), member.optDouble("lon"));
-            if (!away.isEmpty()) out.append(away);
+        if (!member.optBoolean("hasLoc")) return "";
+        return awayText(member.optDouble("lat"), member.optDouble("lon"));
+    }
+
+    private View batteryBadge(int percent) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        BatteryMeter meter = new BatteryMeter(this);
+        int level = percent;
+        if (level < 0) level = 0;
+        if (level > 100) level = 100;
+        meter.setPercent(level);
+        LinearLayout.LayoutParams meterLp = new LinearLayout.LayoutParams(dp(28), dp(14));
+        meterLp.rightMargin = dp(4);
+        meter.setLayoutParams(meterLp);
+        TextView pct = new TextView(this);
+        pct.setText(level + "%");
+        pct.setTextColor(0xFF1A1916);
+        pct.setTextSize(13);
+        pct.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        row.addView(meter);
+        row.addView(pct);
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rowLp.gravity = android.view.Gravity.TOP;
+        rowLp.leftMargin = dp(8);
+        row.setLayoutParams(rowLp);
+        return row;
+    }
+
+    private static final class BatteryMeter extends View {
+        private int percent;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        BatteryMeter(android.content.Context context) {
+            super(context);
         }
-        int battery = member.optInt("battery", -1);
-        if (battery >= 0) {
-            if (out.length() > 0) out.append("\n");
-            out.append("Battery ").append(battery).append("%");
+
+        void setPercent(int percent) {
+            this.percent = percent;
+            invalidate();
         }
-        return out.toString();
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float w = getWidth();
+            float h = getHeight();
+            if (w <= 0 || h <= 0) return;
+            float stroke = Math.max(1.5f, h * 0.12f);
+            float nub = Math.max(2f, w * 0.08f);
+            float bodyRight = w - nub - 1f;
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(stroke);
+            paint.setColor(0xFF1A1916);
+            RectF body = new RectF(stroke / 2f, stroke / 2f, bodyRight - stroke / 2f, h - stroke / 2f);
+            canvas.drawRoundRect(body, h * 0.22f, h * 0.22f, paint);
+            paint.setStyle(Paint.Style.FILL);
+            float nubH = h * 0.36f;
+            canvas.drawRoundRect(new RectF(bodyRight - 0.5f, (h - nubH) / 2f, w - 0.5f, (h + nubH) / 2f), 1.2f, 1.2f, paint);
+            float pad = stroke + 1.2f;
+            float inner = (body.right - body.left - pad * 2f) * percent / 100f;
+            if (percent > 0 && inner < 1.5f) inner = 1.5f;
+            if (percent <= 15) paint.setColor(0xFFC8102E);
+            else if (percent <= 40) paint.setColor(0xFFC47B16);
+            else paint.setColor(0xFF2F6B3A);
+            if (inner > 0) {
+                canvas.drawRoundRect(new RectF(body.left + pad, body.top + pad, body.left + pad + inner, body.bottom - pad), 2f, 2f, paint);
+            }
+        }
     }
 
     private String awayText(double lat, double lon) {
@@ -798,6 +864,10 @@ public class MapActivity extends Activity {
 
     private void bindPersonCard(final JSONObject member, boolean moveMap) {
         cardName.setText(member.optString("name", "Someone"));
+        LinearLayout batterySlot = findViewById(R.id.cardBattery);
+        batterySlot.removeAllViews();
+        int battery = member.optInt("battery", -1);
+        if (battery >= 0) batterySlot.addView(batteryBadge(battery));
         fillStatus(member, cardArrived, cardStay);
         final double lat = member.optDouble("lat", Double.NaN);
         final double lon = member.optDouble("lon", Double.NaN);

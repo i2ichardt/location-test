@@ -17,4 +17,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             LocationTest.apk \
             --title "Family ${GITHUB_REF_NAME#v}" \
-            --notes "Family 2.7. Directions opens a Google Maps route. People at the same spot share one bubble. Tap People to open or close the list. Battery, distance, and updated profile photos are on each person."
+            --notes "Family 2.8. Tap People to open or close the list, and drag it as well. Tap Home · people to fit the group on the map. Battery is an icon with the percent on each person."

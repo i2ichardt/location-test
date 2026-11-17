@@ -8,6 +8,11 @@ import android.view.ViewConfiguration;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 
+/**
+ * The people sheet both follows a finger and snaps fully open or closed on a tap.
+ * A tap on the handle or the title toggles it. A drag on the handle, the title,
+ * or a person row (when the list is not scrolling) moves it with the finger.
+ */
 public class CurtainSheet extends LinearLayout {
     public interface Pull {
         void onDown(float rawY);
@@ -25,6 +30,7 @@ public class CurtainSheet extends LinearLayout {
     public CurtainSheet(Context context, AttributeSet attrs) {
         super(context, attrs);
         slop = ViewConfiguration.get(context).getScaledTouchSlop();
+        setClickable(true);
     }
 
     public void setPull(Pull pull) {
@@ -34,14 +40,16 @@ public class CurtainSheet extends LinearLayout {
     @Override
     public boolean onInterceptTouchEvent(MotionEvent event) {
         if (pull == null) return false;
-        int action = event.getAction();
+        int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
             downX = event.getRawX();
             downY = event.getRawY();
             tracking = true;
             dragging = false;
             pull.onDown(downY);
-            return false;
+            // Own the handle and title immediately. Otherwise a tap falls through
+            // the map and the sheet never hears the lift.
+            return onChrome(downX, downY);
         }
         if (action == MotionEvent.ACTION_MOVE && tracking && !dragging) {
             float dx = event.getRawX() - downX;
@@ -51,46 +59,63 @@ public class CurtainSheet extends LinearLayout {
                 return true;
             }
         }
-        if (action == MotionEvent.ACTION_UP && tracking && !dragging && onHandle(downX, downY)) {
-            float dx = event.getRawX() - downX;
-            float dy = event.getRawY() - downY;
-            if (Math.abs(dx) < slop && Math.abs(dy) < slop) {
-                pull.onUp(event.getRawY(), true);
-                tracking = false;
-                return true;
-            }
+        if (action == MotionEvent.ACTION_CANCEL) {
+            tracking = false;
+            dragging = false;
         }
-        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) tracking = false;
         return false;
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        if (!dragging || pull == null) return super.onTouchEvent(event);
-        int action = event.getAction();
-        if (action == MotionEvent.ACTION_MOVE) {
-            pull.onMove(event.getRawY());
+        if (pull == null) return super.onTouchEvent(event);
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            downX = event.getRawX();
+            downY = event.getRawY();
+            tracking = true;
+            dragging = false;
+            pull.onDown(downY);
             return true;
         }
-        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-            pull.onUp(event.getRawY(), false);
-            dragging = false;
+        if (!tracking && !dragging) return super.onTouchEvent(event);
+        if (action == MotionEvent.ACTION_MOVE) {
+            float dx = event.getRawX() - downX;
+            float dy = event.getRawY() - downY;
+            if (!dragging && Math.abs(dy) > slop && Math.abs(dy) > Math.abs(dx)) dragging = true;
+            if (dragging) pull.onMove(event.getRawY());
+            return true;
+        }
+        if (action == MotionEvent.ACTION_UP) {
+            boolean tap = !dragging;
+            pull.onUp(event.getRawY(), tap);
             tracking = false;
+            dragging = false;
+            return true;
+        }
+        if (action == MotionEvent.ACTION_CANCEL) {
+            if (dragging) pull.onUp(event.getRawY(), false);
+            tracking = false;
+            dragging = false;
             return true;
         }
         return true;
     }
 
-    private boolean onHandle(float x, float y) {
-        View handle = findViewById(R.id.peopleTab);
-        if (handle == null) return false;
+    private boolean onChrome(float x, float y) {
+        return hit(R.id.peopleTab, x, y) || hit(R.id.peopleTitle, x, y);
+    }
+
+    private boolean hit(int id, float x, float y) {
+        View view = findViewById(id);
+        if (view == null || view.getWidth() <= 0) return false;
         int[] loc = new int[2];
-        handle.getLocationOnScreen(loc);
-        return x >= loc[0] && x < loc[0] + handle.getWidth() && y >= loc[1] && y < loc[1] + handle.getHeight();
+        view.getLocationOnScreen(loc);
+        return x >= loc[0] && x < loc[0] + view.getWidth() && y >= loc[1] && y < loc[1] + view.getHeight();
     }
 
     private boolean shouldDrag(float dy) {
-        if (onHandle(downX, downY)) return true;
+        if (onChrome(downX, downY)) return true;
         if (getTranslationY() > dp(8)) return true;
         ScrollView scroll = findViewById(R.id.peopleScroll);
         if (scroll == null || scroll.getChildCount() == 0) return true;
