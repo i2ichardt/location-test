@@ -9,15 +9,20 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
+import android.content.IntentFilter;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.net.wifi.WifiManager;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
+import android.telephony.PhoneStateListener;
+import android.telephony.SignalStrength;
+import android.telephony.TelephonyManager;
 import java.io.File;
 import java.io.FileInputStream;
 import org.json.JSONArray;
@@ -35,6 +40,10 @@ public class ShareService extends Service {
     private Location lastFix;
     private boolean moving;
     private long lastSend;
+    private long armedListen = -1;
+    private int cellLevel = -1;
+    private TelephonyManager telephony;
+    private PhoneStateListener phoneListener;
     private final LocationListener listener = new LocationListener() {
         @Override
         public void onLocationChanged(Location location) {
@@ -55,7 +64,9 @@ public class ShareService extends Service {
     private final Runnable sendTask = new Runnable() {
         @Override
         public void run() {
-            if (lastFix != null) considerSend(lastFix);
+            if (locationOff() || !hasLocationPermission()) maybeHeartbeat();
+            else if (lastFix != null) considerSend(lastFix);
+            ensureListen();
             if (handler != null) handler.postDelayed(this, sendWait());
         }
     };
@@ -73,6 +84,7 @@ public class ShareService extends Service {
         thread.start();
         handler = new Handler(thread.getLooper());
         channels();
+        watchSignal();
     }
 
     @Override
@@ -96,6 +108,12 @@ public class ShareService extends Service {
             locations.removeUpdates(listener);
         } catch (Exception ignored) {
         }
+        if (telephony != null && phoneListener != null) {
+            try {
+                telephony.listen(phoneListener, PhoneStateListener.LISTEN_NONE);
+            } catch (Exception ignored) {
+            }
+        }
         if (thread != null) thread.quitSafely();
         super.onDestroy();
     }
@@ -107,23 +125,6 @@ public class ShareService extends Service {
             locations.removeUpdates(listener);
         } catch (Exception ignored) {
         }
-        if (!hasLocationPermission()) {
-            goForeground("Location permission is off");
-            return;
-        }
-        long interval = sendWait();
-        try {
-            if (locations.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locations.requestLocationUpdates(LocationManager.GPS_PROVIDER, interval, 0f, listener, thread.getLooper());
-            }
-        } catch (Exception ignored) {
-        }
-        try {
-            if (locations.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                locations.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, interval, 0f, listener, thread.getLooper());
-            }
-        } catch (Exception ignored) {
-        }
         handler.post(new Runnable() {
             @Override
             public void run() {
@@ -132,6 +133,12 @@ public class ShareService extends Service {
         });
         handler.post(fetchTask);
         handler.post(sendTask);
+        if (!hasLocationPermission() || locationOff()) {
+            goForeground("Location is off");
+            return;
+        }
+        armedListen = -1;
+        ensureListen();
     }
 
     private boolean hasLocationPermission() {
@@ -140,9 +147,14 @@ public class ShareService extends Service {
     }
 
     private void considerSend(Location location) {
+        if (locationOff() || !hasLocationPermission()) {
+            maybeHeartbeat();
+            return;
+        }
         boolean stoppedOnly = Prefs.onlyStopped(this);
         boolean isMoving = location.hasSpeed() && location.getSpeed() > 0.8f;
-        if (stoppedOnly && isMoving) {
+        boolean faster = highway(location) || (Prefs.chargeFast(this) && isCharging());
+        if (stoppedOnly && isMoving && !faster) {
             moving = true;
             return;
         }
@@ -155,7 +167,7 @@ public class ShareService extends Service {
         if (postLocation(location)) lastSend = now;
     }
 
-    private long sendWait() {
+    private long paceWait() {
         if ("custom".equals(Prefs.pace(this))) return Prefs.customMillis(this);
         boolean movingNow = lastFix != null && lastFix.hasSpeed() && lastFix.getSpeed() > 0.8f;
         if (Presence.mapOpen) return 5000L;
@@ -163,10 +175,93 @@ public class ShareService extends Service {
         return movingNow ? 90000L : 900000L;
     }
 
+    private long sendWait() {
+        long wait = paceWait();
+        if (Prefs.chargeFast(this) && isCharging()) {
+            long charge = Prefs.chargeSeconds(this) * 1000L;
+            if (charge < 5000L) charge = 5000L;
+            if (charge < wait) wait = charge;
+        }
+        if (highway(lastFix)) wait = Math.min(wait, 5000L);
+        return wait;
+    }
+
+    private long listenInterval() {
+        if (Prefs.realtimeFast(this)) {
+            if (highway(lastFix)) return 5000L;
+            if (lastFix != null && lastFix.hasSpeed() && lastFix.getSpeed() >= 8f) return 5000L;
+            return Math.min(sendWait(), 15000L);
+        }
+        return sendWait();
+    }
+
+    private boolean highway(Location location) {
+        return Prefs.realtimeFast(this) && location != null && location.hasSpeed() && location.getSpeed() >= 13.4112f;
+    }
+
+    private boolean isCharging() {
+        try {
+            android.content.Intent battery = registerReceiver(null, new IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED));
+            if (battery == null) return false;
+            int status = battery.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+            return status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean locationOff() {
+        if (!hasLocationPermission()) return true;
+        try {
+            boolean gps = locations.isProviderEnabled(LocationManager.GPS_PROVIDER);
+            boolean net = locations.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+            return !gps && !net;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    private void ensureListen() {
+        if (locationOff() || !hasLocationPermission() || thread == null) {
+            armedListen = -1;
+            return;
+        }
+        long want = listenInterval();
+        if (want == armedListen) return;
+        armedListen = want;
+        try {
+            locations.removeUpdates(listener);
+        } catch (Exception ignored) {
+        }
+        try {
+            if (locations.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locations.requestLocationUpdates(LocationManager.GPS_PROVIDER, want, 0f, listener, thread.getLooper());
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            if (locations.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locations.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, want, 0f, listener, thread.getLooper());
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
     private long fetchWait() {
+        if (highway(lastFix) || (Prefs.chargeFast(this) && isCharging())) return Math.min(sendWait(), 15000L);
         if ("custom".equals(Prefs.pace(this))) return Prefs.customMillis(this);
         if (Presence.mapOpen) return 15000L;
         return Prefs.fast(this) ? 120000L : 900000L;
+    }
+
+    private void stamp(JSONObject json) throws Exception {
+        json.put("userId", Prefs.userId(this));
+        json.put("groupId", Prefs.group(this));
+        json.put("ts", System.currentTimeMillis() / 1000L);
+        json.put("signal", signalBars());
+        json.put("every", (int) Math.max(1L, sendWait() / 1000L));
+        int battery = batteryPercent();
+        if (battery >= 0) json.put("battery", battery);
     }
 
     private boolean postLocation(Location location) {
@@ -174,14 +269,11 @@ public class ShareService extends Service {
         if (base.isEmpty()) return false;
         try {
             JSONObject json = new JSONObject();
-            json.put("userId", Prefs.userId(this));
-            json.put("groupId", Prefs.group(this));
+            stamp(json);
+            json.put("locationOff", false);
             json.put("lat", location.getLatitude());
             json.put("lon", location.getLongitude());
-            json.put("ts", System.currentTimeMillis() / 1000L);
             if (location.hasSpeed()) json.put("speed", location.getSpeed());
-            int battery = batteryPercent();
-            if (battery >= 0) json.put("battery", battery);
             Net.Result result = Net.post(base + "/send", json.toString());
             if (result.error == null && result.code >= 200 && result.code < 300) {
                 goForeground("Sharing with " + Prefs.group(this));
@@ -190,6 +282,77 @@ public class ShareService extends Service {
         } catch (Exception ignored) {
         }
         return false;
+    }
+
+    private void maybeHeartbeat() {
+        long now = System.currentTimeMillis();
+        long need = sendWait();
+        if (lastSend != 0 && now - lastSend < need) return;
+        if (postHeartbeat()) lastSend = now;
+    }
+
+    private boolean postHeartbeat() {
+        String base = Net.base(this);
+        if (base.isEmpty()) return false;
+        try {
+            JSONObject json = new JSONObject();
+            stamp(json);
+            json.put("locationOff", true);
+            if (lastFix != null) {
+                json.put("lat", lastFix.getLatitude());
+                json.put("lon", lastFix.getLongitude());
+            }
+            Net.Result result = Net.post(base + "/send", json.toString());
+            if (result.error == null && result.code >= 200 && result.code < 300) {
+                goForeground("Location is off");
+                return true;
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
+    private void watchSignal() {
+        try {
+            telephony = (TelephonyManager) getSystemService(TELEPHONY_SERVICE);
+            if (telephony == null) return;
+            phoneListener = new PhoneStateListener() {
+                @Override
+                public void onSignalStrengthsChanged(SignalStrength signalStrength) {
+                    if (signalStrength == null) return;
+                    if (Build.VERSION.SDK_INT >= 23) {
+                        cellLevel = signalStrength.getLevel();
+                    } else {
+                        int gsm = signalStrength.getGsmSignalStrength();
+                        if (gsm == 99 || gsm < 0) cellLevel = -2;
+                        else if (gsm >= 12) cellLevel = 4;
+                        else if (gsm >= 8) cellLevel = 3;
+                        else if (gsm >= 5) cellLevel = 2;
+                        else if (gsm >= 1) cellLevel = 1;
+                        else cellLevel = 0;
+                    }
+                }
+            };
+            telephony.listen(phoneListener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private int signalBars() {
+        if (cellLevel >= 0 && cellLevel <= 4) return cellLevel;
+        try {
+            WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+            if (wifi != null && wifi.getConnectionInfo() != null) {
+                int rssi = wifi.getConnectionInfo().getRssi();
+                if (rssi >= -55 && rssi < 0) return 4;
+                if (rssi >= -67) return 3;
+                if (rssi >= -75) return 2;
+                if (rssi >= -85 && rssi < 0) return 1;
+                if (rssi < -100) return cellLevel;
+            }
+        } catch (Exception ignored) {
+        }
+        return cellLevel;
     }
 
     private int batteryPercent() {

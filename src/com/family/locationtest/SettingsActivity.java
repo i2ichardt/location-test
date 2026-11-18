@@ -40,11 +40,20 @@ import org.json.JSONObject;
 
 public class SettingsActivity extends Activity {
     private static final int PICK_IMAGE = 7;
+    private static final int PICK_PLACE = 8;
+    private static final int TAKE_PLACE = 9;
+    private static final int REQ_CAMERA = 11;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final GroupWatch watch = new GroupWatch();
     private FrameLayout root;
     private int page;
     private Bitmap pendingPhoto;
+    private Bitmap pendingPlacePhoto;
+    private ImageView placePreview;
+    private String editPlaceId;
+    private double editLat;
+    private double editLon;
+    private int editMeters;
     private LinearLayout placeList;
     private View.OnClickListener pendingSave;
     private TextView updateStatus;
@@ -154,8 +163,11 @@ public class SettingsActivity extends Activity {
         else fast.setChecked(true);
         RadioGroup paceGroup = new RadioGroup(this);
         paceGroup.addView(fast);
+        paceGroup.addView(paceHint("Every 30 seconds while moving, and every 5 minutes while still. With the map open, about every 5 seconds."));
         paceGroup.addView(slow);
+        paceGroup.addView(paceHint("Every 1–2 minutes while moving, and every 15 minutes while still. With the map open, about every 5 seconds."));
         paceGroup.addView(custom);
+        paceGroup.addView(paceHint("Uses the time below for your pin and for fetching the group, including while the map is open."));
         final EditText every = field(String.valueOf(Prefs.sp(this).getInt("customEvery", 30)), "30", InputType.TYPE_CLASS_NUMBER);
         final RadioButton seconds = radio("Seconds");
         final RadioButton minutes = radio("Minutes");
@@ -171,6 +183,15 @@ public class SettingsActivity extends Activity {
         stopped.setText("Update my pin only when I stop moving");
         stopped.setTextColor(0xFF1C1B19);
         stopped.setChecked(Prefs.onlyStopped(this));
+        final CheckBox charging = new CheckBox(this);
+        charging.setText("Faster updates while charging");
+        charging.setTextColor(0xFF1C1B19);
+        charging.setChecked(Prefs.chargeFast(this));
+        final EditText chargeEvery = field(String.valueOf(Prefs.chargeSeconds(this)), "10", InputType.TYPE_CLASS_NUMBER);
+        final CheckBox highway = new CheckBox(this);
+        highway.setText("Real-time updates above 30 MPH");
+        highway.setTextColor(0xFF1C1B19);
+        highway.setChecked(Prefs.realtimeFast(this));
         LinearLayout body = form("Sharing", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -184,12 +205,22 @@ public class SettingsActivity extends Activity {
                 }
                 if (n < 1) n = 1;
                 if (n > 999) n = 999;
+                int chargeN = 10;
+                try {
+                    chargeN = Integer.parseInt(chargeEvery.getText().toString().trim());
+                } catch (Exception ignored) {
+                }
+                if (chargeN < 5) chargeN = 5;
+                if (chargeN > 3600) chargeN = 3600;
                 Prefs.sp(SettingsActivity.this).edit()
                         .putBoolean("share", share.isChecked())
                         .putString("pace", picked)
                         .putInt("customEvery", n)
                         .putString("customUnit", minutes.isChecked() ? "min" : "sec")
                         .putBoolean("stopped", stopped.isChecked())
+                        .putBoolean("chargeFast", charging.isChecked())
+                        .putInt("chargeEvery", chargeN)
+                        .putBoolean("realtimeFast", highway.isChecked())
                         .apply();
                 ShareService.start(SettingsActivity.this);
                 showHub();
@@ -197,12 +228,16 @@ public class SettingsActivity extends Activity {
         });
         body.addView(share);
         body.addView(paceGroup);
-        body.addView(hint("Fast is every 30 seconds while moving and every 5 minutes while still. Slow is every 1–2 minutes while moving and every 15 minutes while still. Custom uses the amount below. Only one of these can be on."));
         body.addView(label("Custom amount"));
         body.addView(every);
         body.addView(unit);
         body.addView(stopped);
-        body.addView(hint("With the map open, Fast and Slow refresh every few seconds. Custom uses the time you set. Low battery, weak GPS, or deep sleep can delay a pin by up to 30 minutes."));
+        body.addView(paceHint("Sends a pin when you stop, unless a faster rule below is on."));
+        body.addView(charging);
+        body.addView(paceHint("While the phone is plugged in, use this many seconds instead of the slower pace above."));
+        body.addView(chargeEvery);
+        body.addView(highway);
+        body.addView(paceHint("About every 5 seconds while you are going faster than 30 miles per hour."));
         mount(body);
     }
 
@@ -510,12 +545,12 @@ public class SettingsActivity extends Activity {
         column.setOrientation(LinearLayout.VERTICAL);
         FrameLayout head = new FrameLayout(this);
         ImageView art = new ImageView(this);
-        art.setImageResource(R.drawable.banner_places);
+        art.setImageResource(bannerForToday());
         art.setScaleType(ImageView.ScaleType.CENTER_CROP);
         head.addView(art, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(236)));
         LinearLayout words = new LinearLayout(this);
         words.setOrientation(LinearLayout.VERTICAL);
-        words.setPadding(dp(20), dp(40), dp(132), dp(36));
+        words.setPadding(dp(20), dp(64), dp(20), dp(28));
         TextView heading = new TextView(this);
         heading.setText(title);
         heading.setTextColor(0xFFFFFFFF);
@@ -543,19 +578,18 @@ public class SettingsActivity extends Activity {
         ScrollView scroll = pageScroll();
         scroll.addView(column);
         frame.addView(scroll, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        if (back) {
-            BackChevron backBtn = new BackChevron(this);
-            FrameLayout.LayoutParams backLp = new FrameLayout.LayoutParams(dp(112), dp(112), Gravity.TOP | Gravity.START);
-            backLp.leftMargin = dp(8);
-            backLp.topMargin = dp(8);
-            backBtn.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    showHub();
-                }
-            });
-            frame.addView(backBtn, backLp);
-        }
+        BackChevron backBtn = new BackChevron(this);
+        FrameLayout.LayoutParams backLp = new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP | Gravity.START);
+        backLp.leftMargin = dp(10);
+        backLp.topMargin = dp(10);
+        backBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (page == 0) finish();
+                else showHub();
+            }
+        });
+        frame.addView(backBtn, backLp);
         root.removeAllViews();
         root.addView(frame);
     }
@@ -634,6 +668,12 @@ public class SettingsActivity extends Activity {
         view.setTextColor(0xFF1B2559);
         view.setTypeface(Typeface.DEFAULT_BOLD);
         view.setPadding(0, dp(12), 0, dp(4));
+        return view;
+    }
+
+    private TextView paceHint(String text) {
+        TextView view = hint(text);
+        view.setPadding(dp(32), 0, dp(8), dp(8));
         return view;
     }
 
@@ -725,7 +765,14 @@ public class SettingsActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != PICK_IMAGE || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        if (requestCode == TAKE_PLACE && resultCode == RESULT_OK) {
+            File file = new File(getCacheDir(), "place_camera.jpg");
+            Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
+            if (bitmap != null) usePlaceBitmap(bitmap);
+            return;
+        }
+        if (requestCode != PICK_IMAGE && requestCode != PICK_PLACE) return;
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         try {
             InputStream in = getContentResolver().openInputStream(data.getData());
             Bitmap bitmap = BitmapFactory.decodeStream(in);
@@ -733,12 +780,33 @@ public class SettingsActivity extends Activity {
             if (bitmap == null) return;
             int size = Math.min(bitmap.getWidth(), bitmap.getHeight());
             Bitmap square = Bitmap.createBitmap(bitmap, (bitmap.getWidth() - size) / 2, (bitmap.getHeight() - size) / 2, size, size);
-            int edge = Math.min(1024, square.getWidth());
-            pendingPhoto = edge == square.getWidth() ? square : Bitmap.createScaledBitmap(square, edge, edge, true);
+            int edge = Math.min(requestCode == PICK_PLACE ? 512 : 1024, square.getWidth());
+            Bitmap scaled = edge == square.getWidth() ? square : Bitmap.createScaledBitmap(square, edge, edge, true);
+            if (requestCode == PICK_PLACE) {
+                usePlaceBitmap(scaled);
+                return;
+            }
+            pendingPhoto = scaled;
             ImageView preview = findViewById(R.id.imagePreview);
             if (preview != null) preview.setImageBitmap(pendingPhoto);
         } catch (Exception e) {
             Toast.makeText(this, "Could not use that photo", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void usePlaceBitmap(Bitmap bitmap) {
+        int size = Math.min(bitmap.getWidth(), bitmap.getHeight());
+        Bitmap square = Bitmap.createBitmap(bitmap, (bitmap.getWidth() - size) / 2, (bitmap.getHeight() - size) / 2, size, size);
+        int edge = Math.min(512, square.getWidth());
+        pendingPlacePhoto = edge == square.getWidth() ? square : Bitmap.createScaledBitmap(square, edge, edge, true);
+        if (placePreview != null) placePreview.setImageBitmap(pendingPlacePhoto);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_CAMERA && grantResults.length > 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            takePlacePhoto();
         }
     }
 
@@ -910,6 +978,17 @@ public class SettingsActivity extends Activity {
         rule.setLayoutParams(ruleLp);
         box.addView(rule);
 
+        LinearLayout tools = new LinearLayout(this);
+        tools.setOrientation(LinearLayout.VERTICAL);
+        tools.setGravity(Gravity.CENTER_HORIZONTAL);
+        PencilButton pencil = new PencilButton(this);
+        pencil.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                askEditPlace(id, name, lat, lon, meters, place.optLong("imageTs"));
+            }
+        });
+        tools.addView(pencil);
         TrashButton trash = new TrashButton(this);
         trash.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -917,7 +996,9 @@ public class SettingsActivity extends Activity {
                 deletePlace(id);
             }
         });
-        box.addView(trash);
+        tools.addView(trash);
+        box.addView(tools);
+        if (place.optBoolean("hasImage")) loadPlaceThumb(thumb, id, place.optLong("imageTs"), name);
         return box;
     }
 
@@ -984,7 +1065,7 @@ public class SettingsActivity extends Activity {
                         }
                         if (meters < 20) meters = 20;
                         if (meters > 5000) meters = 5000;
-                        postPlace("p" + System.currentTimeMillis(), label, Prefs.lat(SettingsActivity.this), Prefs.lon(SettingsActivity.this), meters);
+                        postPlace("p" + System.currentTimeMillis(), label, Prefs.lat(SettingsActivity.this), Prefs.lon(SettingsActivity.this), meters, null);
                     }
                 })
                 .setNegativeButton("Cancel", null)
@@ -1009,14 +1090,87 @@ public class SettingsActivity extends Activity {
                         }
                         if (meters < 20) meters = 20;
                         if (meters > 5000) meters = 5000;
-                        postPlace(id, name, lat, lon, meters);
+                        postPlace(id, name, lat, lon, meters, null);
                     }
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
     }
 
-    private void postPlace(final String id, final String label, final double lat, final double lon, final int meters) {
+    private void askEditPlace(final String id, final String name, final double lat, final double lon, final int meters, final long imageTs) {
+        editPlaceId = id;
+        editLat = lat;
+        editLon = lon;
+        editMeters = meters;
+        pendingPlacePhoto = null;
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(18), dp(8), dp(18), 0);
+        placePreview = new ImageView(this);
+        LinearLayout.LayoutParams face = new LinearLayout.LayoutParams(dp(96), dp(96));
+        face.bottomMargin = dp(8);
+        placePreview.setLayoutParams(face);
+        placePreview.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        placePreview.setBackgroundResource(R.drawable.settings_inner);
+        placePreview.setImageResource(placeArt(name));
+        final EditText label = new EditText(this);
+        label.setText(name);
+        Button choose = textButton("Choose photo", false);
+        choose.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.setType("image/*");
+                startActivityForResult(Intent.createChooser(intent, "Place photo"), PICK_PLACE);
+            }
+        });
+        Button camera = textButton("Take photo", false);
+        camera.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                takePlacePhoto();
+            }
+        });
+        form.addView(placePreview);
+        form.addView(label);
+        form.addView(choose);
+        form.addView(camera);
+        new AlertDialog.Builder(this)
+                .setTitle("Edit place")
+                .setMessage("Rename it, or use a photo from your gallery or camera.")
+                .setView(form)
+                .setPositiveButton("Save", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface dialog, int which) {
+                        String next = label.getText().toString().trim();
+                        if (next.isEmpty()) next = name;
+                        String image = pendingPlacePhoto == null ? null : placeImageB64(pendingPlacePhoto);
+                        postPlace(id, next, lat, lon, meters, image);
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+        if (imageTs > 0) loadPlaceThumb(placePreview, id, imageTs, name);
+    }
+
+    private void takePlacePhoto() {
+        if (checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.CAMERA}, REQ_CAMERA);
+            return;
+        }
+        try {
+            Intent intent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+            android.net.Uri uri = android.net.Uri.parse("content://com.family.locationtest.camera/place.jpg");
+            intent.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri);
+            intent.setClipData(android.content.ClipData.newRawUri("place", uri));
+            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivityForResult(intent, TAKE_PLACE);
+        } catch (Exception e) {
+            Toast.makeText(this, "No camera app on this phone", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void postPlace(final String id, final String label, final double lat, final double lon, final int meters, final String image) {
         final String base = Net.base(this);
         if (base.isEmpty()) {
             Toast.makeText(this, "Add a server address first", Toast.LENGTH_SHORT).show();
@@ -1033,6 +1187,7 @@ public class SettingsActivity extends Activity {
                     json.put("lat", lat);
                     json.put("lon", lon);
                     json.put("radius", meters);
+                    if (image != null) json.put("image", image);
                     Net.Result result = Net.post(base + "/place", json.toString());
                     handler.post(new Runnable() {
                         @Override
@@ -1235,6 +1390,85 @@ public class SettingsActivity extends Activity {
         intent.setDataAndType(uri, "application/vnd.android.package-archive");
         intent.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION | android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(intent);
+    }
+
+    private String placeImageB64(Bitmap bitmap) {
+        int quality = 80;
+        byte[] bytes = jpegBytes(bitmap, quality);
+        while (bytes.length > 400000 && quality > 40) {
+            quality -= 8;
+            bytes = jpegBytes(bitmap, quality);
+        }
+        return android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP);
+    }
+
+    private File placeFile(String id, long imageTs) {
+        return new File(getFilesDir(), "place_" + id + "_" + imageTs + ".jpg");
+    }
+
+    private void loadPlaceThumb(final ImageView thumb, final String id, final long imageTs, final String name) {
+        if (imageTs <= 0) return;
+        File cached = placeFile(id, imageTs);
+        if (cached.exists()) {
+            Bitmap bitmap = BitmapFactory.decodeFile(cached.getAbsolutePath());
+            if (bitmap != null) {
+                thumb.setImageBitmap(bitmap);
+                return;
+            }
+        }
+        final String base = Net.base(this);
+        if (base.isEmpty()) return;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Net.Result result = Net.getBytes(base + "/placeimg?groupId=" + Net.query(Prefs.group(SettingsActivity.this)) + "&id=" + Net.query(id));
+                if (result.error != null || result.raw == null || result.raw.length == 0) return;
+                try {
+                    FileOutputStream out = new FileOutputStream(placeFile(id, imageTs));
+                    out.write(result.raw);
+                    out.close();
+                } catch (Exception ignored) {
+                }
+                final Bitmap bitmap = BitmapFactory.decodeByteArray(result.raw, 0, result.raw.length);
+                if (bitmap == null) return;
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        thumb.setImageBitmap(bitmap);
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private int bannerForToday() {
+        java.util.Calendar now = java.util.Calendar.getInstance();
+        int month = now.get(java.util.Calendar.MONTH);
+        int day = now.get(java.util.Calendar.DAY_OF_MONTH);
+        if ((month == java.util.Calendar.DECEMBER && day >= 27) || (month == java.util.Calendar.JANUARY && day <= 2)) {
+            return R.drawable.banner_newyear;
+        }
+        if (month == java.util.Calendar.DECEMBER && day >= 18) return R.drawable.banner_christmas;
+        if (month == java.util.Calendar.OCTOBER && day >= 24) return R.drawable.banner_halloween;
+        if (month == java.util.Calendar.NOVEMBER && thanksgivingWeek(now)) return R.drawable.banner_thanksgiving;
+        if (month == java.util.Calendar.FEBRUARY && day >= 12 && day <= 15) return R.drawable.banner_valentine;
+        if (month == java.util.Calendar.JULY && day <= 5) return R.drawable.banner_july4;
+        int md = (month + 1) * 100 + day;
+        if (md >= 320 && md < 621) return R.drawable.banner_spring;
+        if (md >= 621 && md < 922) return R.drawable.banner_places;
+        if (md >= 922 && md < 1221) return R.drawable.banner_fall;
+        return R.drawable.banner_winter;
+    }
+
+    private boolean thanksgivingWeek(java.util.Calendar now) {
+        java.util.Calendar first = java.util.Calendar.getInstance();
+        first.set(java.util.Calendar.MONTH, java.util.Calendar.NOVEMBER);
+        first.set(java.util.Calendar.DAY_OF_MONTH, 1);
+        int weekday = first.get(java.util.Calendar.DAY_OF_WEEK);
+        int add = (java.util.Calendar.THURSDAY - weekday + 7) % 7;
+        int fourth = 1 + add + 21;
+        int day = now.get(java.util.Calendar.DAY_OF_MONTH);
+        return day >= fourth - 1 && day <= fourth + 3;
     }
 
     private static final class BackChevron extends View {
@@ -1445,6 +1679,39 @@ public class SettingsActivity extends Activity {
                 paint.setColor(0xFFC5CEDF);
                 canvas.drawCircle(s / 2f, s / 2f, s / 2f - paint.getStrokeWidth(), paint);
             }
+        }
+    }
+
+    private static final class PencilButton extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        PencilButton(android.content.Context context) {
+            super(context);
+            int size = Math.round(40 * getResources().getDisplayMetrics().density);
+            setLayoutParams(new LinearLayout.LayoutParams(size, size));
+            setClickable(true);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float s = Math.min(getWidth(), getHeight());
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(0xFFEEF1F6);
+            canvas.drawCircle(s / 2f, s / 2f, s / 2f, paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+            paint.setStrokeWidth(Math.max(1.7f, s * 0.045f));
+            paint.setColor(0xFF2F6BFF);
+            Path pencil = new Path();
+            pencil.moveTo(s * 0.62f, s * 0.28f);
+            pencil.lineTo(s * 0.72f, s * 0.38f);
+            pencil.lineTo(s * 0.40f, s * 0.70f);
+            pencil.lineTo(s * 0.28f, s * 0.74f);
+            pencil.lineTo(s * 0.32f, s * 0.60f);
+            pencil.close();
+            canvas.drawPath(pencil, paint);
+            canvas.drawLine(s * 0.56f, s * 0.34f, s * 0.66f, s * 0.44f, paint);
         }
     }
 

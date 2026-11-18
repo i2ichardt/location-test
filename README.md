@@ -6,11 +6,11 @@ The server is [family-location-server](https://github.com/i2ichardt/family-locat
 
 ## Download and install
 
-The compiled app is on the [v2.10 release](https://github.com/i2ichardt/location-test/releases/tag/v2.10).
+The compiled app is on the [v2.11 release](https://github.com/i2ichardt/location-test/releases/tag/v2.11).
 
-[Download LocationTest.apk](https://github.com/i2ichardt/location-test/releases/download/v2.10/LocationTest.apk)
+[Download LocationTest.apk](https://github.com/i2ichardt/location-test/releases/download/v2.11/LocationTest.apk)
 
-The installed app is named **Family** (version 2.10). Android will ask you to allow installs from the browser.
+The installed app is named **Family** (version 2.11). Android will ask you to allow installs from the browser.
 
 Allow location when the app asks. Sharing keeps a small notification so Android does not stop the updates.
 
@@ -22,13 +22,13 @@ Shared Places lists every saved spot with its picture, its arrive and leave dist
 
 **Updates** checks the GitHub release page. If a newer app is there, it downloads it and starts the install.
 
-**Back** is the large round arrow fixed at the top left. It returns to the menu without saving, and it stays there while the page scrolls. **Save** commits only that page.
+**Back** is the round arrow at the top left of every settings page, including the first one. On the first page it closes Settings. On the others it returns to the menu. The header picture changes with the season and the holiday. **Save** commits only that page.
 
 The phone field formats as you type. You only enter digits. A US number becomes `111-111-1111`.
 
-Sharing is **Fast**, **Slow**, or **Custom**. Custom is a number plus **Seconds** or **Minutes**. Fast is every 30 seconds while moving and every 5 minutes while still. Slow is every 1–2 minutes while moving and every 15 minutes while still. With the map open, Fast and Slow refresh every few seconds. Custom uses the time you set for both sending your pin and fetching the group, including while the map is open. Low battery, weak GPS, or deep sleep can delay a pin by up to 30 minutes.
+Sharing is **Fast**, **Slow**, or **Custom**. Each option has its own description on that page. Fast is every 30 seconds while moving and every 5 minutes while still. Slow is every 1–2 minutes while moving and every 15 minutes while still. Custom is a number plus **Seconds** or **Minutes**. With the map open, Fast and Slow refresh every few seconds. Custom uses the time you set for both sending your pin and fetching the group, including while the map is open.
 
-You can also turn sharing off, or update the pin only when you stop moving.
+**Faster updates while charging** uses the number of seconds on that row while the phone is plugged in. **Real-time updates above 30 MPH** sends a pin about every 5 seconds while you are going faster than 30 miles per hour. You can also turn sharing off, or update the pin only when you stop moving. Low battery, weak GPS, or deep sleep can still delay a pin.
 
 ## The map
 
@@ -36,7 +36,7 @@ The map is the whole screen. Pinch to zoom. There are no +/- buttons.
 
 Your photo, and everyone else's, sits on the pin. **Satellite** switches to aerial photos. Tap it again for the street map. The app opens in the same view next time.
 
-**People** is the handle at the bottom. Tap the handle, or the "People in your group" title, and the list opens or closes all the way. Drag the handle or drag a person in the list and the panel follows your finger. The list still scrolls when it is open and does not fit. Each person shows how far away they are. Battery is a phone-style icon with the percent at the top right of that person's panel. **Center** moves the map to them. **Directions** opens Google Maps with a route ready to start. **Call** and **Text** use the phone. Tap a profile photo for a larger picture. Tap or swipe that picture to close it.
+**People** is the handle at the bottom. Tap the handle, or the "People in your group" title, and the list opens or closes all the way. Drag the handle or drag a person in the list and the panel follows your finger. The list still scrolls when it is open and does not fit. Battery is a phone-style icon with the percent at the top right of that person's panel. Next to it is a signal icon with the same kind of bars as a phone. If a check-in is missed, that icon becomes a no-signal mark, and the same mark sits on their map pin until the next check-in. If their location is turned off, the panel says so. **Center** moves the map to them. **Directions** opens Google Maps with a route ready to start. **Call** places the call. **Text** uses the phone. Tap a profile photo for a larger picture. Tap or swipe that picture to close it.
 
 The line at the top left, **Home · 3 people** (or Tailscale), is a button. Tap it and the map frames everyone in the group who has a pin.
 
@@ -48,7 +48,7 @@ People at the same spot share one map bubble. Their photos sit next to each othe
 
 ## Shared places
 
-In Settings, **Save where I am as a place** adds that spot for the whole group. Home, school, or work.
+In Settings, the pencil above the trash can renames a place and can use a photo from the gallery or the camera. **Save where I am as a place** adds that spot for the whole group. Home, school, or work.
 
 Each phone chooses its own alerts:
 

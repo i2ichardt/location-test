@@ -87,6 +87,21 @@ public final class Prefs {
         return ms;
     }
 
+    public static boolean chargeFast(Context context) {
+        return sp(context).getBoolean("chargeFast", true);
+    }
+
+    public static int chargeSeconds(Context context) {
+        int n = sp(context).getInt("chargeEvery", 10);
+        if (n < 5) n = 5;
+        if (n > 3600) n = 3600;
+        return n;
+    }
+
+    public static boolean realtimeFast(Context context) {
+        return sp(context).getBoolean("realtimeFast", true);
+    }
+
     public static boolean onlyStopped(Context context) {
         return sp(context).getBoolean("stopped", false);
     }

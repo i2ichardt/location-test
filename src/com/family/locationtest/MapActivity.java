@@ -225,12 +225,6 @@ public class MapActivity extends Activity {
                 || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
     }
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (hasLocation()) ShareService.start(this);
-    }
-
     private void applyGroup(String raw) {
         final String label = Net.routeLabel(this);
         try {
@@ -265,6 +259,8 @@ public class MapActivity extends Activity {
                 pin.put("lon", member.optDouble("lon"));
                 pin.put("letter", name.isEmpty() ? "?" : name.substring(0, 1).toUpperCase());
                 pin.put("traveling", member.optBoolean("traveling"));
+                pin.put("silent", missedCheckin(member));
+                pin.put("gpsOff", member.optBoolean("locationOff"));
                 long imageTs = member.optLong("imageTs");
                 boolean hasImage = member.optBoolean("hasImage");
                 if (hasImage && ensureFace(userId, imageTs)) {
@@ -625,7 +621,7 @@ public class MapActivity extends Activity {
         words.setLayoutParams(wordsLp);
         top.addView(words);
         int battery = member.optInt("battery", -1);
-        if (battery >= 0) top.addView(batteryBadge(battery));
+        top.addView(statusBadge(member, battery));
         card.addView(top);
 
         final double lat = member.optDouble("lat", Double.NaN);
@@ -650,7 +646,7 @@ public class MapActivity extends Activity {
         actions.addView(wideButton("Call", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (!phone.isEmpty()) startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + phone)));
+                if (!phone.isEmpty()) placeCall(phone);
             }
         }));
         actions.addView(wideButton("Text", new View.OnClickListener() {
@@ -736,7 +732,7 @@ public class MapActivity extends Activity {
 
     private void fillStatus(JSONObject member, TextView line1, TextView line2) {
         if (!member.optBoolean("hasLoc")) {
-            line1.setText("No location yet");
+            line1.setText(member.optBoolean("locationOff") ? "Location is off" : "No location yet");
             line2.setText("");
             line2.setVisibility(View.GONE);
             return;
@@ -782,8 +778,122 @@ public class MapActivity extends Activity {
 
     private String extraLine(JSONObject member) {
         if (!member.optBoolean("hasLoc")) return "";
+        if (member.optBoolean("locationOff")) return "Location is off";
         if (member.optString("userId").equals(Prefs.userId(this))) return "";
-        return awayText(member.optDouble("lat"), member.optDouble("lon"));
+        if (!Prefs.hasFix(this)) return "";
+        double meters = haversine(Prefs.lat(this), Prefs.lon(this), member.optDouble("lat"), member.optDouble("lon"));
+        if (meters < 30) return "Here with you";
+        return "";
+    }
+
+    private boolean missedCheckin(JSONObject member) {
+        if (member.optBoolean("locationOff")) return false;
+        int every = member.optInt("every", 0);
+        long ts = member.optLong("ts", 0);
+        if (every <= 0 || ts <= 0) return false;
+        long now = System.currentTimeMillis() / 1000L;
+        return now > ts + (long) (every * 1.5) + 20L;
+    }
+
+    private String pendingCall;
+
+    private void placeCall(String phone) {
+        if (phone == null || phone.isEmpty()) return;
+        Intent call = new Intent(Intent.ACTION_CALL, Uri.parse("tel:" + phone));
+        if (checkSelfPermission(android.Manifest.permission.CALL_PHONE) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            try {
+                startActivity(call);
+                return;
+            } catch (Exception ignored) {
+            }
+        }
+        pendingCall = phone;
+        requestPermissions(new String[]{android.Manifest.permission.CALL_PHONE}, 41);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == 41) {
+            String phone = pendingCall;
+            pendingCall = null;
+            if (phone != null && grantResults.length > 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                try {
+                    startActivity(new Intent(Intent.ACTION_CALL, Uri.parse("tel:" + phone)));
+                    return;
+                } catch (Exception ignored) {
+                }
+            }
+            if (phone != null) startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + phone)));
+            return;
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (hasLocation()) ShareService.start(this);
+    }
+
+    private View statusBadge(JSONObject member, int percent) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        int signal = member.optInt("signal", -1);
+        boolean none = missedCheckin(member) || signal <= -2;
+        SignalMeter bars = new SignalMeter(this);
+        bars.setLevel(none ? -2 : signal);
+        LinearLayout.LayoutParams barsLp = new LinearLayout.LayoutParams(dp(22), dp(16));
+        barsLp.rightMargin = dp(6);
+        bars.setLayoutParams(barsLp);
+        row.addView(bars);
+        if (percent >= 0) row.addView(batteryBadge(percent));
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rowLp.gravity = android.view.Gravity.TOP;
+        rowLp.leftMargin = dp(8);
+        row.setLayoutParams(rowLp);
+        return row;
+    }
+
+    private static final class SignalMeter extends View {
+        private int level = -1;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        SignalMeter(android.content.Context context) {
+            super(context);
+        }
+
+        void setLevel(int level) {
+            this.level = level;
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float w = getWidth();
+            float h = getHeight();
+            if (w <= 0 || h <= 0) return;
+            boolean none = level <= -2;
+            int bars = none ? 0 : Math.max(0, Math.min(4, level));
+            float gap = w * 0.08f;
+            float barW = (w * 0.62f - gap * 3f) / 4f;
+            float[] height = {0.35f, 0.55f, 0.75f, 1f};
+            for (int i = 0; i < 4; i++) {
+                float bh = h * height[i];
+                float x = i * (barW + gap);
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(!none && i < bars ? 0xFF1A1916 : 0xFFC5C9D1);
+                canvas.drawRoundRect(new RectF(x, h - bh, x + barW, h), barW * 0.35f, barW * 0.35f, paint);
+            }
+            if (!none) return;
+            float r = h * 0.42f;
+            float cx = w - r;
+            float cy = h * 0.42f;
+            paint.setColor(0xFFE23B3B);
+            canvas.drawCircle(cx, cy, r, paint);
+            paint.setColor(0xFFFFFFFF);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeWidth(Math.max(1.6f, r * 0.32f));
+            float d = r * 0.42f;
+            canvas.drawLine(cx - d, cy - d, cx + d, cy + d, paint);
+            canvas.drawLine(cx + d, cy - d, cx - d, cy + d, paint);
+        }
     }
 
     private View batteryBadge(int percent) {
@@ -853,16 +963,6 @@ public class MapActivity extends Activity {
         }
     }
 
-    private String awayText(double lat, double lon) {
-        if (!Prefs.hasFix(this) || Double.isNaN(lat) || Double.isNaN(lon)) return "";
-        double meters = haversine(Prefs.lat(this), Prefs.lon(this), lat, lon);
-        if (meters < 30) return "Here with you";
-        if (meters < 160) return Math.round(meters * 3.28084) + " ft away";
-        double miles = meters / 1609.344;
-        if (miles < 10) return String.format(Locale.US, "%.1f miles away", miles);
-        return Math.round(miles) + " miles away";
-    }
-
     private static double haversine(double lat1, double lon1, double lat2, double lon2) {
         double r = 6371000.0;
         double p1 = Math.toRadians(lat1);
@@ -916,8 +1016,7 @@ public class MapActivity extends Activity {
         cardName.setText(member.optString("name", "Someone"));
         LinearLayout batterySlot = findViewById(R.id.cardBattery);
         batterySlot.removeAllViews();
-        int battery = member.optInt("battery", -1);
-        if (battery >= 0) batterySlot.addView(batteryBadge(battery));
+        batterySlot.addView(statusBadge(member, member.optInt("battery", -1)));
         fillStatus(member, cardArrived, cardStay);
         final double lat = member.optDouble("lat", Double.NaN);
         final double lon = member.optDouble("lon", Double.NaN);
@@ -932,7 +1031,7 @@ public class MapActivity extends Activity {
         findViewById(R.id.cardCall).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (!phone.isEmpty()) startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + phone)));
+                if (!phone.isEmpty()) placeCall(phone);
             }
         });
         findViewById(R.id.cardText).setOnClickListener(new View.OnClickListener() {

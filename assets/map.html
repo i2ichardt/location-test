@@ -15,17 +15,38 @@
 <div id="map"></div>
 <script src="leaflet/leaflet.js"></script>
 <script>
+(function () {
+  var orig = L.GridLayer.prototype._getTiledPixelBounds;
+  L.GridLayer.prototype._getTiledPixelBounds = function (center) {
+    var bounds = orig.call(this, center);
+    var pad = 512;
+    if (bounds && bounds.min && bounds.max) {
+      bounds.min = bounds.min.subtract(L.point(pad, pad));
+      bounds.max = bounds.max.add(L.point(pad, pad));
+    }
+    return bounds;
+  };
+})();
 var map = L.map('map', { zoomControl: false }).setView([39.95, -75.16], 3);
 var streets = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
+  keepBuffer: 6,
+  updateWhenIdle: false,
+  updateWhenZooming: false,
   attribution: '&copy; OpenStreetMap'
 }).addTo(map);
 var satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
   maxZoom: 19,
+  keepBuffer: 6,
+  updateWhenIdle: false,
+  updateWhenZooming: false,
   attribution: 'Tiles &copy; Esri'
 });
 var labels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
   maxZoom: 19,
+  keepBuffer: 6,
+  updateWhenIdle: false,
+  updateWhenZooming: false,
   pane: 'shadowPane'
 });
 function setSatellite(on) {
@@ -62,15 +83,40 @@ function escapeHtml(text) {
   });
 }
 
+function noSignalMark() {
+  return '<svg width="22" height="16" viewBox="0 0 24 16" style="display:block">'
+    + '<rect x="0" y="10" width="3" height="6" rx="1" fill="#C5C9D1"/>'
+    + '<rect x="4.2" y="7" width="3" height="9" rx="1" fill="#C5C9D1"/>'
+    + '<rect x="8.4" y="4" width="3" height="12" rx="1" fill="#C5C9D1"/>'
+    + '<rect x="12.6" y="1" width="3" height="15" rx="1" fill="#C5C9D1"/>'
+    + '<circle cx="20" cy="8" r="5.2" fill="#E23B3B"/>'
+    + '<path d="M18.1 6.1 L21.9 9.9 M21.9 6.1 L18.1 9.9" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>'
+    + '</svg>';
+}
+
+function pinBadges(person) {
+  var html = '';
+  if (person.silent) {
+    html += '<div style="position:absolute;right:-12px;top:-8px">' + noSignalMark() + '</div>';
+  }
+  if (person.gpsOff) {
+    html += '<div style="position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);background:#1A1916;color:#fff;font-size:9px;line-height:12px;font-weight:700;border-radius:6px;padding:1px 4px;white-space:nowrap">GPS off</div>';
+  }
+  return html;
+}
+
 function faceHtml(person) {
   var id = escapeHtml(person.userId);
+  var face;
   if (person.icon) {
-    return '<img data-id="' + id + '" src="' + person.icon + '" style="width:40px;height:40px;border-radius:20px;object-fit:cover;border:2px solid #fff;background:#F4F1EA;display:block">';
+    face = '<img data-id="' + id + '" src="' + person.icon + '" style="width:40px;height:40px;border-radius:20px;object-fit:cover;border:2px solid #fff;background:#F4F1EA;display:block">';
+  } else {
+    var letter = escapeHtml(person.letter || '?');
+    var bg = person.waitImage ? 'transparent' : '#C8102E';
+    var color = person.waitImage ? '#1A1916' : '#fff';
+    face = '<div data-id="' + id + '" style="width:40px;height:40px;border-radius:20px;background:' + bg + ';color:' + color + ';text-align:center;line-height:36px;font-weight:700;border:2px solid #fff;box-sizing:border-box">' + letter + '</div>';
   }
-  var letter = escapeHtml(person.letter || '?');
-  var bg = person.waitImage ? 'transparent' : '#C8102E';
-  var color = person.waitImage ? '#1A1916' : '#fff';
-  return '<div data-id="' + id + '" style="width:40px;height:40px;border-radius:20px;background:' + bg + ';color:' + color + ';text-align:center;line-height:36px;font-weight:700;border:2px solid #fff;box-sizing:border-box">' + letter + '</div>';
+  return '<div data-id="' + id + '" style="position:relative;width:40px;height:40px">' + face + pinBadges(person) + '</div>';
 }
 
 function soloIcon(person) {
@@ -110,7 +156,10 @@ function clusterOf(list) {
 
 function iconSig(people) {
   var parts = [];
-  for (var i = 0; i < people.length; i++) parts.push((people[i].userId || '') + ':' + (people[i].icon || people[i].letter || ''));
+  for (var i = 0; i < people.length; i++) {
+    var p = people[i];
+    parts.push((p.userId || '') + ':' + (p.icon || p.letter || '') + (p.silent ? ':s' : '') + (p.gpsOff ? ':g' : ''));
+  }
   return parts.join('|');
 }
 
@@ -171,7 +220,8 @@ function setPeople(list) {
   }
 }
 function iconFor(person) {
-  if (person.icon) {
+  var badges = pinBadges(person);
+  if (person.icon && !person.silent && !person.gpsOff) {
     return L.icon({
       iconUrl: person.icon,
       iconSize: [42, 42],
@@ -179,20 +229,20 @@ function iconFor(person) {
       className: 'pin-icon'
     });
   }
-  if (person.waitImage) {
-    return L.divIcon({
-      className: '',
-      html: '<div style="width:36px;height:36px;border-radius:18px;background:transparent;border:2px solid rgba(26,25,22,0.28)"></div>',
-      iconSize: [36, 36],
-      iconAnchor: [18, 36]
-    });
+  var face;
+  if (person.icon) {
+    face = '<img src="' + person.icon + '" style="width:42px;height:42px;border-radius:21px;object-fit:cover;border:2px solid #1A1916;background:#F4F1EA;display:block">';
+  } else if (person.waitImage) {
+    face = '<div style="width:36px;height:36px;border-radius:18px;background:transparent;border:2px solid rgba(26,25,22,0.28)"></div>';
+  } else {
+    face = '<div style="width:36px;height:36px;border-radius:18px;background:#C8102E;color:#fff;text-align:center;line-height:36px;font-weight:700;border:2px solid #1A1916">' +
+      (person.letter || '?') + '</div>';
   }
   return L.divIcon({
     className: '',
-    html: '<div style="width:36px;height:36px;border-radius:18px;background:#C8102E;color:#fff;text-align:center;line-height:36px;font-weight:700;border:2px solid #1A1916">' +
-      (person.letter || '?') + '</div>',
-    iconSize: [36, 36],
-    iconAnchor: [18, 36]
+    html: '<div style="position:relative;width:42px;height:48px">' + face + badges + '</div>',
+    iconSize: [42, 56],
+    iconAnchor: [21, 52]
   });
 }
 
