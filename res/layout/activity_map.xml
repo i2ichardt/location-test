@@ -98,7 +98,10 @@
             android:id="@+id/cardArrived"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:ellipsize="none"
             android:paddingTop="4dp"
+            android:scrollHorizontally="false"
+            android:singleLine="false"
             android:textColor="#5C584F"
             android:textSize="14sp" />
 
@@ -106,8 +109,11 @@
             android:id="@+id/cardStay"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:ellipsize="none"
             android:paddingTop="2dp"
             android:paddingBottom="10dp"
+            android:scrollHorizontally="false"
+            android:singleLine="false"
             android:textColor="#5C584F"
             android:textSize="14sp" />
 

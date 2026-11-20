@@ -9,6 +9,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RectF;
 import android.net.Uri;
 import android.os.Build;
@@ -229,6 +230,9 @@ public class MapActivity extends Activity {
         final String label = Net.routeLabel(this);
         try {
             JSONObject body = new JSONObject(raw);
+            int aliveBefore = Prefs.aliveEvery(this);
+            ShareService.noteGroup(this, body);
+            if (Prefs.aliveEvery(this) != aliveBefore) ShareService.nudge(this);
             JSONArray members = body.optJSONArray("members");
             if (members == null) members = new JSONArray();
             JSONArray markers = new JSONArray();
@@ -259,7 +263,9 @@ public class MapActivity extends Activity {
                 pin.put("lon", member.optDouble("lon"));
                 pin.put("letter", name.isEmpty() ? "?" : name.substring(0, 1).toUpperCase());
                 pin.put("traveling", member.optBoolean("traveling"));
-                pin.put("silent", missedCheckin(member));
+                pin.put("speed", member.optDouble("speed", 0));
+                pin.put("ts", member.optLong("ts", 0));
+                pin.put("silent", member.optInt("signal", -1) <= -2);
                 pin.put("gpsOff", member.optBoolean("locationOff"));
                 long imageTs = member.optLong("imageTs");
                 boolean hasImage = member.optBoolean("hasImage");
@@ -599,30 +605,37 @@ public class MapActivity extends Activity {
         });
         top.addView(face);
 
-        LinearLayout words = new LinearLayout(this);
-        words.setOrientation(LinearLayout.VERTICAL);
-        words.setPadding(dp(10), 0, 0, 0);
         TextView name = new TextView(this);
         name.setText(member.optString("name", "Someone"));
         name.setTextColor(0xFF1C1B19);
         name.setTextSize(17);
         name.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        nameLp.leftMargin = dp(10);
+        nameLp.rightMargin = dp(6);
+        name.setLayoutParams(nameLp);
+        top.addView(name);
+        int battery = member.optInt("battery", -1);
+        top.addView(statusBadge(member, battery));
+        card.addView(top);
+
         TextView line1 = new TextView(this);
         TextView line2 = new TextView(this);
         line1.setTextColor(0xFF5C584F);
         line2.setTextColor(0xFF5C584F);
         line1.setTextSize(14);
         line2.setTextSize(14);
+        widen(line1);
+        widen(line2);
+        LinearLayout.LayoutParams lineLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lineLp.topMargin = dp(6);
+        line1.setLayoutParams(lineLp);
+        LinearLayout.LayoutParams line2Lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        line2Lp.topMargin = dp(2);
+        line2.setLayoutParams(line2Lp);
         fillStatus(member, line1, line2);
-        words.addView(name);
-        words.addView(line1);
-        words.addView(line2);
-        LinearLayout.LayoutParams wordsLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        words.setLayoutParams(wordsLp);
-        top.addView(words);
-        int battery = member.optInt("battery", -1);
-        top.addView(statusBadge(member, battery));
-        card.addView(top);
+        card.addView(line1);
+        card.addView(line2);
 
         final double lat = member.optDouble("lat", Double.NaN);
         final double lon = member.optDouble("lon", Double.NaN);
@@ -735,6 +748,7 @@ public class MapActivity extends Activity {
             line1.setText(member.optBoolean("locationOff") ? "Location is off" : "No location yet");
             line2.setText("");
             line2.setVisibility(View.GONE);
+            addReach(member, line2);
             return;
         }
         line2.setVisibility(View.VISIBLE);
@@ -750,6 +764,7 @@ public class MapActivity extends Activity {
             String departedLine = mins < 1 ? "Departed from " + from + " - just now" : "Departed from " + from + " - " + agoPhrase(mins);
             String more = extraLine(member);
             line2.setText(more.isEmpty() ? departedLine : departedLine + "\n" + more);
+            addReach(member, line2);
             return;
         }
         long arrived = member.optLong("arrived", member.optLong("ts"));
@@ -765,6 +780,59 @@ public class MapActivity extends Activity {
             line2.setText(more);
             line2.setVisibility(View.VISIBLE);
         }
+        addReach(member, line2);
+    }
+
+    private void addReach(JSONObject member, TextView line2) {
+        String extra = reachText(member);
+        if (extra.isEmpty()) return;
+        if (line2.getVisibility() != View.VISIBLE || line2.getText() == null || line2.getText().length() == 0) {
+            line2.setText(extra);
+            line2.setVisibility(View.VISIBLE);
+            return;
+        }
+        line2.setText(line2.getText().toString() + "\n" + extra);
+    }
+
+    private String reachText(JSONObject member) {
+        StringBuilder text = new StringBuilder();
+        long seen = member.optLong("seen", 0);
+        if (seen > 0) text.append("Last response ").append(responseAgo(seen));
+        if (member.optBoolean("unreachable")) {
+            if (text.length() > 0) text.append('\n');
+            if (member.optInt("signal", -1) <= -2) text.append("No signal in their area");
+            else text.append("Tailscale may be off, the phone may be off, or there is no signal");
+        }
+        return text.toString();
+    }
+
+    private String responseAgo(long seen) {
+        long now = System.currentTimeMillis() / 1000L;
+        long sec = now - seen;
+        if (sec < 0) sec = 0;
+        if (sec < 45) return "just now";
+        if (sec < 60) return sec + " seconds ago";
+        return agoPhrase(sec / 60L);
+    }
+
+    private String paceText(JSONObject member) {
+        int every = member.optInt("every", 0);
+        if (every <= 0) return "";
+        if (every < 60) return "Updates every " + every + (every == 1 ? " second" : " seconds");
+        int mins = every / 60;
+        int rem = every % 60;
+        if (rem == 0) return "Updates every " + mins + (mins == 1 ? " minute" : " minutes");
+        return "Updates every " + mins + (mins == 1 ? " minute " : " minutes ") + rem + (rem == 1 ? " second" : " seconds");
+    }
+
+    private void widen(TextView view) {
+        view.setSingleLine(false);
+        view.setEllipsize(null);
+        view.setHorizontallyScrolling(false);
+        ViewGroup.LayoutParams lp = view.getLayoutParams();
+        if (lp == null) return;
+        lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+        view.setLayoutParams(lp);
     }
 
     private String agoPhrase(long mins) {
@@ -784,15 +852,6 @@ public class MapActivity extends Activity {
         double meters = haversine(Prefs.lat(this), Prefs.lon(this), member.optDouble("lat"), member.optDouble("lon"));
         if (meters < 30) return "Here with you";
         return "";
-    }
-
-    private boolean missedCheckin(JSONObject member) {
-        if (member.optBoolean("locationOff")) return false;
-        int every = member.optInt("every", 0);
-        long ts = member.optLong("ts", 0);
-        if (every <= 0 || ts <= 0) return false;
-        long now = System.currentTimeMillis() / 1000L;
-        return now > ts + (long) (every * 1.5) + 20L;
     }
 
     private String pendingCall;
@@ -835,19 +894,33 @@ public class MapActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(android.view.Gravity.CENTER_VERTICAL);
         int signal = member.optInt("signal", -1);
-        boolean none = missedCheckin(member) || signal <= -2;
+        boolean none = signal <= -2;
         SignalMeter bars = new SignalMeter(this);
         bars.setLevel(none ? -2 : signal);
         LinearLayout.LayoutParams barsLp = new LinearLayout.LayoutParams(dp(22), dp(16));
         barsLp.rightMargin = dp(6);
         bars.setLayoutParams(barsLp);
         row.addView(bars);
+        LinkMeter link = new LinkMeter(this);
+        link.setConnected(!member.optBoolean("unreachable"));
+        row.addView(iconSlot(link));
+        LocMeter loc = new LocMeter(this);
+        loc.setOn(!member.optBoolean("locationOff"));
+        row.addView(iconSlot(loc));
+        if (member.optBoolean("wifi")) row.addView(iconSlot(new WifiMark(this)));
         if (percent >= 0) row.addView(batteryBadge(percent));
         LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         rowLp.gravity = android.view.Gravity.TOP;
         rowLp.leftMargin = dp(8);
         row.setLayoutParams(rowLp);
         return row;
+    }
+
+    private View iconSlot(View icon) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(16), dp(16));
+        lp.rightMargin = dp(5);
+        icon.setLayoutParams(lp);
+        return icon;
     }
 
     private static final class SignalMeter extends View {
@@ -893,6 +966,112 @@ public class MapActivity extends Activity {
             float d = r * 0.42f;
             canvas.drawLine(cx - d, cy - d, cx + d, cy + d, paint);
             canvas.drawLine(cx + d, cy - d, cx - d, cy + d, paint);
+        }
+    }
+
+    private static final class LinkMeter extends View {
+        private boolean connected = true;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        LinkMeter(android.content.Context context) {
+            super(context);
+        }
+
+        void setConnected(boolean connected) {
+            this.connected = connected;
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float w = getWidth();
+            float h = getHeight();
+            if (w <= 0 || h <= 0) return;
+            float cy = h * 0.5f;
+            float r = h * 0.18f;
+            float x1 = r + h * 0.06f;
+            float x2 = w - r - h * 0.06f;
+            paint.setColor(connected ? 0xFF2F6B3A : 0xFFE23B3B);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeWidth(Math.max(1.6f, h * 0.12f));
+            paint.setStyle(Paint.Style.STROKE);
+            if (connected) {
+                canvas.drawLine(x1, cy, x2, cy, paint);
+            } else {
+                canvas.drawLine(x1, cy, w * 0.36f, cy, paint);
+                canvas.drawLine(w * 0.64f, cy, x2, cy, paint);
+            }
+            paint.setStyle(Paint.Style.FILL);
+            canvas.drawCircle(x1, cy, r, paint);
+            canvas.drawCircle(x2, cy, r, paint);
+            if (connected) return;
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(Math.max(1.6f, h * 0.12f));
+            float s = r * 0.95f;
+            canvas.drawLine(w * 0.5f - s, cy - s, w * 0.5f + s, cy + s, paint);
+            canvas.drawLine(w * 0.5f + s, cy - s, w * 0.5f - s, cy + s, paint);
+        }
+    }
+
+    private static final class LocMeter extends View {
+        private boolean on = true;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        LocMeter(android.content.Context context) {
+            super(context);
+        }
+
+        void setOn(boolean on) {
+            this.on = on;
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float w = getWidth();
+            float h = getHeight();
+            if (w <= 0 || h <= 0) return;
+            float cx = w * 0.5f;
+            float r = w * 0.26f;
+            float cy = r + h * 0.06f;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(on ? 0xFF2F6B3A : 0xFFE23B3B);
+            canvas.drawCircle(cx, cy, r, paint);
+            Path tip = new Path();
+            tip.moveTo(cx - r * 0.62f, cy + r * 0.2f);
+            tip.lineTo(cx + r * 0.62f, cy + r * 0.2f);
+            tip.lineTo(cx, h * 0.94f);
+            tip.close();
+            canvas.drawPath(tip, paint);
+            paint.setColor(0xFFFFFFFF);
+            canvas.drawCircle(cx, cy, r * 0.38f, paint);
+        }
+    }
+
+    private static final class WifiMark extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        WifiMark(android.content.Context context) {
+            super(context);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float w = getWidth();
+            float h = getHeight();
+            if (w <= 0 || h <= 0) return;
+            float cx = w * 0.5f;
+            float cy = h * 0.78f;
+            paint.setColor(0xFF1A1916);
+            paint.setStyle(Paint.Style.FILL);
+            canvas.drawCircle(cx, cy, Math.max(1.4f, h * 0.08f), paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeWidth(Math.max(1.4f, h * 0.09f));
+            for (int i = 1; i <= 3; i++) {
+                float rad = h * 0.22f * i;
+                canvas.drawArc(new RectF(cx - rad, cy - rad, cx + rad, cy + rad), 210, 120, false, paint);
+            }
         }
     }
 
@@ -1014,10 +1193,21 @@ public class MapActivity extends Activity {
 
     private void bindPersonCard(final JSONObject member, boolean moveMap) {
         cardName.setText(member.optString("name", "Someone"));
+        widen(cardArrived);
+        widen(cardStay);
         LinearLayout batterySlot = findViewById(R.id.cardBattery);
         batterySlot.removeAllViews();
         batterySlot.addView(statusBadge(member, member.optInt("battery", -1)));
         fillStatus(member, cardArrived, cardStay);
+        String pace = paceText(member);
+        if (!pace.isEmpty()) {
+            if (cardStay.getVisibility() == View.VISIBLE && cardStay.getText() != null && cardStay.getText().length() > 0) {
+                cardStay.setText(pace + "\n" + cardStay.getText());
+            } else {
+                cardStay.setText(pace);
+                cardStay.setVisibility(View.VISIBLE);
+            }
+        }
         final double lat = member.optDouble("lat", Double.NaN);
         final double lon = member.optDouble("lon", Double.NaN);
         final boolean hasLoc = member.optBoolean("hasLoc");

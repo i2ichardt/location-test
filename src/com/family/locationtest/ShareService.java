@@ -20,6 +20,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.telephony.PhoneStateListener;
 import android.telephony.SignalStrength;
 import android.telephony.TelephonyManager;
@@ -30,6 +31,8 @@ import org.json.JSONObject;
 
 public class ShareService extends Service {
     public static final String ACTION_RELOAD = "com.family.locationtest.RELOAD";
+    public static final String ACTION_STOP = "com.family.locationtest.STOP";
+    public static final String ACTION_ALIVE = "com.family.locationtest.ALIVE";
     private static final int NOTE_ID = 7;
     private static final String CH_SHARE = "sharing";
     private static final String CH_PLACES = "places";
@@ -39,14 +42,26 @@ public class ShareService extends Service {
     private LocationManager locations;
     private Location lastFix;
     private boolean moving;
+    private boolean looping;
     private long lastSend;
     private long armedListen = -1;
     private int cellLevel = -1;
     private TelephonyManager telephony;
     private PhoneStateListener phoneListener;
+    private boolean hasAccepted;
+    private double acceptedLat;
+    private double acceptedLon;
+    private long acceptedMono;
+    private String acceptedProv = "";
+    private boolean aliveQueued;
+    private int queuedAlive = -1;
+    private long lastAliveAt;
+    private long lastAliveTry;
     private final LocationListener listener = new LocationListener() {
         @Override
         public void onLocationChanged(Location location) {
+            if (location == null || dropFix(location)) return;
+            rememberFix(location);
             lastFix = location;
             Prefs.saveFix(ShareService.this, location.getLatitude(), location.getLongitude());
             considerSend(location);
@@ -71,6 +86,26 @@ public class ShareService extends Service {
         }
     };
 
+    private final Runnable aliveTask = new Runnable() {
+        @Override
+        public void run() {
+            aliveQueued = false;
+            if (handler == null) return;
+            int every = Prefs.aliveEvery(ShareService.this);
+            if (every <= 0) {
+                queuedAlive = 0;
+                return;
+            }
+            long period = every * 1000L;
+            long now = System.currentTimeMillis();
+            if (lastAliveAt <= 0 || now - lastAliveAt >= period) {
+                if (postAlive()) lastAliveAt = System.currentTimeMillis();
+                else lastAliveTry = System.currentTimeMillis();
+            }
+            scheduleAlive();
+        }
+    };
+
     @Override
     public IBinder onBind(Intent intent) {
         return null;
@@ -85,16 +120,28 @@ public class ShareService extends Service {
         handler = new Handler(thread.getLooper());
         channels();
         watchSignal();
+        loadAccepted();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+            Prefs.setShare(this, false);
+        }
         if (!Prefs.share(this)) {
-            stopForeground(true);
+            try {
+                stopForeground(true);
+            } catch (Exception ignored) {
+            }
             stopSelf();
             return START_NOT_STICKY;
         }
-        goForeground("Sharing with " + Prefs.group(this));
+        boolean aliveOnly = intent != null && ACTION_ALIVE.equals(intent.getAction());
+        goForeground(locationOff() ? "Location is off" : "Sharing with " + Prefs.group(this));
+        if (aliveOnly && looping) {
+            ensureAlive();
+            return START_STICKY;
+        }
         arm();
         return START_STICKY;
     }
@@ -119,6 +166,7 @@ public class ShareService extends Service {
     }
 
     private void arm() {
+        looping = true;
         handler.removeCallbacks(fetchTask);
         handler.removeCallbacks(sendTask);
         try {
@@ -133,6 +181,7 @@ public class ShareService extends Service {
         });
         handler.post(fetchTask);
         handler.post(sendTask);
+        ensureAlive();
         if (!hasLocationPermission() || locationOff()) {
             goForeground("Location is off");
             return;
@@ -262,6 +311,9 @@ public class ShareService extends Service {
         json.put("every", (int) Math.max(1L, sendWait() / 1000L));
         int battery = batteryPercent();
         if (battery >= 0) json.put("battery", battery);
+        json.put("mono", SystemClock.elapsedRealtime());
+        json.put("wifi", wifiConnected(this));
+        json.put("ssid", wifiSsid(this));
     }
 
     private boolean postLocation(Location location) {
@@ -273,6 +325,9 @@ public class ShareService extends Service {
             json.put("locationOff", false);
             json.put("lat", location.getLatitude());
             json.put("lon", location.getLongitude());
+            json.put("mono", fixElapsed(location));
+            if (location.hasAccuracy()) json.put("acc", (double) location.getAccuracy());
+            json.put("prov", LocationManager.GPS_PROVIDER.equals(location.getProvider()) ? "gps" : "network");
             if (location.hasSpeed()) json.put("speed", location.getSpeed());
             Net.Result result = Net.post(base + "/send", json.toString());
             if (result.error == null && result.code >= 200 && result.code < 300) {
@@ -310,6 +365,208 @@ public class ShareService extends Service {
         } catch (Exception ignored) {
         }
         return false;
+    }
+
+    private void loadAccepted() {
+        if (!Prefs.hasAccepted(this)) return;
+        hasAccepted = true;
+        acceptedLat = Prefs.acceptedLat(this);
+        acceptedLon = Prefs.acceptedLon(this);
+        acceptedMono = Prefs.acceptedMono(this);
+        acceptedProv = Prefs.acceptedProv(this);
+    }
+
+    private long fixElapsed(Location location) {
+        try {
+            long nanos = location.getElapsedRealtimeNanos();
+            if (nanos > 0L) return nanos / 1000000L;
+        } catch (Exception ignored) {
+        }
+        return SystemClock.elapsedRealtime();
+    }
+
+    private boolean dropFix(Location location) {
+        if (!hasAccepted || location == null) return false;
+        double lat = location.getLatitude();
+        double lon = location.getLongitude();
+        long mono = fixElapsed(location);
+        long gap = mono - acceptedMono;
+        boolean gps = LocationManager.GPS_PROVIDER.equals(location.getProvider());
+        float acc = location.hasAccuracy() ? location.getAccuracy() : -1f;
+        if (gap >= 0 && gap < 120000L) {
+            double dist = meters(acceptedLat, acceptedLon, lat, lon);
+            double sec = gap / 1000.0;
+            double speed = sec < 0.05 ? (dist > 1.0 ? 1000.0 : 0.0) : dist / sec;
+            if (speed > 70.0) return true;
+        }
+        boolean coarse = !gps || acc > 80f;
+        boolean recentGps = "gps".equals(acceptedProv) && gap >= 0 && gap < 90000L;
+        if (coarse && recentGps) return true;
+        String ssid = wifiSsid(this);
+        String place = Prefs.placeSsid(this);
+        if (!ssid.isEmpty() && ssid.equals(place)) {
+            double dist = meters(acceptedLat, acceptedLon, lat, lon);
+            if (dist > 80.0) return true;
+        }
+        return false;
+    }
+
+    private void rememberFix(Location location) {
+        acceptedLat = location.getLatitude();
+        acceptedLon = location.getLongitude();
+        acceptedMono = fixElapsed(location);
+        acceptedProv = LocationManager.GPS_PROVIDER.equals(location.getProvider()) ? "gps" : "network";
+        hasAccepted = true;
+        float acc = location.hasAccuracy() ? location.getAccuracy() : -1f;
+        Prefs.saveAccepted(this, acceptedLat, acceptedLon, acceptedMono, acceptedProv, acc);
+    }
+
+    private boolean postAlive() {
+        String base = Net.base(this);
+        if (base.isEmpty()) return false;
+        try {
+            JSONObject json = new JSONObject();
+            stamp(json);
+            json.put("alive", true);
+            json.put("locationOff", locationOff());
+            Net.Result result = Net.post(base + "/send", json.toString());
+            return result.error == null && result.code >= 200 && result.code < 300;
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
+    private void ensureAlive() {
+        if (handler == null) return;
+        if (Looper.myLooper() == handler.getLooper()) scheduleAlive();
+        else handler.post(new Runnable() {
+            @Override
+            public void run() {
+                scheduleAlive();
+            }
+        });
+    }
+
+    private void scheduleAlive() {
+        if (handler == null) return;
+        int every = Prefs.aliveEvery(this);
+        if (every <= 0) {
+            handler.removeCallbacks(aliveTask);
+            aliveQueued = false;
+            queuedAlive = 0;
+            return;
+        }
+        long period = every * 1000L;
+        long now = System.currentTimeMillis();
+        long wait;
+        if (lastAliveAt > 0 && now - lastAliveAt < period) {
+            wait = lastAliveAt + period - now;
+        } else if (lastAliveTry > lastAliveAt) {
+            wait = lastAliveTry + period - now;
+            if (wait < 0) wait = 0;
+        } else {
+            wait = 0;
+        }
+        if (aliveQueued && queuedAlive == every) return;
+        handler.removeCallbacks(aliveTask);
+        aliveQueued = true;
+        queuedAlive = every;
+        handler.postDelayed(aliveTask, wait);
+    }
+
+    static boolean wifiConnected(Context context) {
+        try {
+            WifiManager wifi = (WifiManager) context.getApplicationContext().getSystemService(WIFI_SERVICE);
+            if (wifi == null) return false;
+            android.net.wifi.WifiInfo info = wifi.getConnectionInfo();
+            return info != null && info.getNetworkId() != -1;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    static String wifiSsid(Context context) {
+        try {
+            if (!wifiConnected(context)) return "";
+            WifiManager wifi = (WifiManager) context.getApplicationContext().getSystemService(WIFI_SERVICE);
+            if (wifi == null) return "";
+            android.net.wifi.WifiInfo info = wifi.getConnectionInfo();
+            if (info == null || info.getNetworkId() == -1) return "";
+            return cleanSsid(info.getSSID());
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    static String cleanSsid(String ssid) {
+        if (ssid == null) return "";
+        String s = ssid.trim();
+        if (s.length() >= 2 && s.charAt(0) == '"' && s.charAt(s.length() - 1) == '"') {
+            s = s.substring(1, s.length() - 1).trim();
+        }
+        if (s.isEmpty() || "<unknown ssid>".equalsIgnoreCase(s) || "0x".equalsIgnoreCase(s)) return "";
+        return s;
+    }
+
+    public static void noteGroup(Context context, JSONObject body) {
+        if (context == null || body == null) return;
+        try {
+            Prefs.setAliveEvery(context, body.optInt("aliveEvery", 0));
+            rememberPlace(context, body);
+        } catch (Exception ignored) {
+        }
+    }
+
+    public static void nudge(Context context) {
+        if (context == null || !Prefs.share(context)) return;
+        Intent intent = new Intent(context, ShareService.class);
+        intent.setAction(ACTION_ALIVE);
+        if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent);
+        else context.startService(intent);
+    }
+
+    static void rememberPlace(Context context, JSONObject body) {
+        JSONArray members = body.optJSONArray("members");
+        if (members == null) return;
+        String me = Prefs.userId(context);
+        String area = "";
+        boolean hasLoc = false;
+        double lat = 0;
+        double lon = 0;
+        for (int i = 0; i < members.length(); i++) {
+            JSONObject member = members.optJSONObject(i);
+            if (member == null || !me.equals(member.optString("userId"))) continue;
+            area = member.optString("area", "");
+            hasLoc = member.optBoolean("hasLoc");
+            lat = member.optDouble("lat", 0);
+            lon = member.optDouble("lon", 0);
+            break;
+        }
+        if (area == null) area = "";
+        area = area.trim();
+        if (area.isEmpty() && hasLoc) {
+            JSONArray places = body.optJSONArray("places");
+            if (places != null) {
+                double best = Double.MAX_VALUE;
+                String found = "";
+                for (int i = 0; i < places.length(); i++) {
+                    JSONObject place = places.optJSONObject(i);
+                    if (place == null) continue;
+                    double radius = place.optDouble("radius", 100);
+                    if (radius < 20) radius = 20;
+                    double dist = meters(lat, lon, place.optDouble("lat"), place.optDouble("lon"));
+                    if (dist <= radius && dist < best) {
+                        best = dist;
+                        found = place.optString("name", "");
+                    }
+                }
+                area = found == null ? "" : found.trim();
+            }
+        }
+        if (area.isEmpty() || !wifiConnected(context)) return;
+        String ssid = wifiSsid(context);
+        if (ssid.isEmpty()) return;
+        Prefs.rememberPlaceWifi(context, area, ssid);
     }
 
     private void watchSignal() {
@@ -410,6 +667,8 @@ public class ShareService extends Service {
         if (result.error != null || result.code != 200) return;
         try {
             JSONObject body = new JSONObject(result.body);
+            noteGroup(this, body);
+            ensureAlive();
             JSONArray members = body.optJSONArray("members");
             JSONArray places = body.optJSONArray("places");
             if (members == null || places == null) return;
@@ -471,17 +730,27 @@ public class ShareService extends Service {
     }
 
     private void goForeground(String text) {
+        boolean off = text != null && text.startsWith("Location is off");
+        String group = Prefs.group(this);
+        String body = off
+                ? "Location is off. Swipe this away to stop sharing your location."
+                : "Sharing with " + group + ". Swipe this away to stop sharing your location.";
         Intent open = new Intent(this, MapActivity.class);
+        Intent stop = new Intent(this, ShareService.class);
+        stop.setAction(ACTION_STOP);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
         PendingIntent pending = PendingIntent.getActivity(this, 0, open, flags);
+        PendingIntent delete = PendingIntent.getService(this, 2, stop, flags);
         Notification.Builder builder = Build.VERSION.SDK_INT >= 26
                 ? new Notification.Builder(this, CH_SHARE)
                 : new Notification.Builder(this);
         builder.setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .setContentTitle("Family")
-                .setContentText(text)
-                .setOngoing(true)
+                .setContentText(body)
+                .setStyle(new Notification.BigTextStyle().bigText(body))
+                .setOngoing(false)
+                .setDeleteIntent(delete)
                 .setContentIntent(pending);
         Notification note = builder.build();
         if (Build.VERSION.SDK_INT >= 29) {

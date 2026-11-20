@@ -17,4 +17,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             LocationTest.apk \
             --title "Family ${GITHUB_REF_NAME#v}" \
-            --notes "Family 2.11. Smaller settings back button on every page, seasonal headers, place photos, signal bars, charging and highway update rates, and Call starts the call."
+            --notes "Family 2.12. Steadier pins, Wi-Fi and alive checks, location and connection icons, and map pins that point at the exact spot."

@@ -184,4 +184,74 @@ public final class Prefs {
     public static double lon(Context context) {
         return sp(context).getFloat("lon", 0f);
     }
+
+    public static void setShare(Context context, boolean on) {
+        sp(context).edit().putBoolean("share", on).apply();
+    }
+
+    public static void setAliveEvery(Context context, int seconds) {
+        if (seconds < 0) seconds = 0;
+        if (seconds > 86400) seconds = 86400;
+        sp(context).edit().putInt("aliveEvery", seconds).apply();
+    }
+
+    public static int aliveEvery(Context context) {
+        int n = sp(context).getInt("aliveEvery", 0);
+        if (n < 0) return 0;
+        if (n > 86400) return 86400;
+        return n;
+    }
+
+    public static void rememberPlaceWifi(Context context, String area, String ssid) {
+        sp(context).edit()
+                .putString("placeArea", area == null ? "" : area)
+                .putString("placeSsid", ssid == null ? "" : ssid)
+                .apply();
+    }
+
+    public static String placeArea(Context context) {
+        String area = sp(context).getString("placeArea", "");
+        return area == null ? "" : area;
+    }
+
+    public static String placeSsid(Context context) {
+        String ssid = sp(context).getString("placeSsid", "");
+        return ssid == null ? "" : ssid;
+    }
+
+    public static void saveAccepted(Context context, double lat, double lon, long mono, String prov, float acc) {
+        sp(context).edit()
+                .putBoolean("fixOk", true)
+                .putLong("fixLat", Double.doubleToRawLongBits(lat))
+                .putLong("fixLon", Double.doubleToRawLongBits(lon))
+                .putLong("fixMono", mono)
+                .putString("fixProv", prov == null ? "" : prov)
+                .putFloat("fixAcc", acc)
+                .apply();
+    }
+
+    public static boolean hasAccepted(Context context) {
+        return sp(context).getBoolean("fixOk", false);
+    }
+
+    public static double acceptedLat(Context context) {
+        return Double.longBitsToDouble(sp(context).getLong("fixLat", Double.doubleToRawLongBits(0)));
+    }
+
+    public static double acceptedLon(Context context) {
+        return Double.longBitsToDouble(sp(context).getLong("fixLon", Double.doubleToRawLongBits(0)));
+    }
+
+    public static long acceptedMono(Context context) {
+        return sp(context).getLong("fixMono", 0L);
+    }
+
+    public static String acceptedProv(Context context) {
+        String prov = sp(context).getString("fixProv", "");
+        return prov == null ? "" : prov;
+    }
+
+    public static float acceptedAcc(Context context) {
+        return sp(context).getFloat("fixAcc", -1f);
+    }
 }

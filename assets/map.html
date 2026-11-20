@@ -100,7 +100,7 @@ function pinBadges(person) {
     html += '<div style="position:absolute;right:-12px;top:-8px">' + noSignalMark() + '</div>';
   }
   if (person.gpsOff) {
-    html += '<div style="position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);background:#1A1916;color:#fff;font-size:9px;line-height:12px;font-weight:700;border-radius:6px;padding:1px 4px;white-space:nowrap">GPS off</div>';
+    html += '<div style="position:absolute;left:50%;top:-16px;transform:translateX(-50%);background:#1A1916;color:#fff;font-size:9px;line-height:12px;font-weight:700;border-radius:6px;padding:1px 4px;white-space:nowrap">GPS off</div>';
   }
   return html;
 }
@@ -154,6 +154,56 @@ function clusterOf(list) {
   return clusters;
 }
 
+function clusterMotion(people) {
+  var speed = 0;
+  var ts = 0;
+  for (var i = 0; i < people.length; i++) {
+    var p = people[i];
+    if (typeof p.speed === 'number' && p.speed > speed) speed = p.speed;
+    if (typeof p.ts === 'number' && p.ts > ts) ts = p.ts;
+  }
+  return { speed: speed, ts: ts };
+}
+
+function placeMarker(marker, lat, lon, speed, ts) {
+  marker._glideToken = (marker._glideToken || 0) + 1;
+  if (marker._glide) cancelAnimationFrame(marker._glide);
+  marker._glide = 0;
+  var token = marker._glideToken;
+  var prev = marker._commit;
+  var glide = false;
+  if (prev && typeof prev.lat === 'number' && ts && prev.ts) {
+    var gap = ts - prev.ts;
+    var dist = metersApart(prev, { lat: lat, lon: lon });
+    var implied = gap > 0 ? dist / gap : 0;
+    var close = gap > 0 && gap < 20 && dist < 400;
+    var fast = gap > 0 && gap < 30 && (speed > 13.4 || implied > 13.4);
+    if (dist > 0.5 && gap < 30 && (close || fast)) glide = true;
+  }
+  marker._commit = { lat: lat, lon: lon, ts: ts || (prev && prev.ts) || 0 };
+  if (!glide) {
+    marker.setLatLng([lat, lon]);
+    return;
+  }
+  var start = marker.getLatLng();
+  var t0 = Date.now();
+  var duration = 1000;
+  function frame() {
+    if (marker._glideToken !== token) return;
+    var u = (Date.now() - t0) / duration;
+    if (u >= 1) {
+      marker.setLatLng([lat, lon]);
+      marker._glide = 0;
+      return;
+    }
+    if (u < 0) u = 0;
+    var e = u * u * (3 - 2 * u);
+    marker.setLatLng([start.lat + (lat - start.lat) * e, start.lng + (lon - start.lng) * e]);
+    marker._glide = requestAnimationFrame(frame);
+  }
+  marker._glide = requestAnimationFrame(frame);
+}
+
 function iconSig(people) {
   var parts = [];
   for (var i = 0; i < people.length; i++) {
@@ -185,12 +235,14 @@ function setPeople(list) {
     var key = ids.join('|');
     seen[key] = true;
     bounds.push([cluster.lat, cluster.lon]);
+    var motion = clusterMotion(cluster.people);
     var sig = iconSig(cluster.people);
     var icon = cluster.people.length > 1 ? bubbleIcon(cluster.people) : soloIcon(cluster.people[0]);
     var marker = markers[key];
     if (!marker) {
       marker = L.marker([cluster.lat, cluster.lon], { icon: icon });
       marker._sig = sig;
+      marker._commit = { lat: cluster.lat, lon: cluster.lon, ts: motion.ts };
       (function (group) {
         marker.on('click', function (ev) {
           var id = clickedId(ev, group[0].userId);
@@ -200,7 +252,7 @@ function setPeople(list) {
       marker.addTo(map);
       markers[key] = marker;
     } else {
-      marker.setLatLng([cluster.lat, cluster.lon]);
+      placeMarker(marker, cluster.lat, cluster.lon, motion.speed, motion.ts);
       if (marker._sig !== sig) {
         marker.setIcon(icon);
         marker._sig = sig;
@@ -209,6 +261,8 @@ function setPeople(list) {
   }
   Object.keys(markers).forEach(function (id) {
     if (!seen[id]) {
+      if (markers[id]._glide) cancelAnimationFrame(markers[id]._glide);
+      markers[id]._glideToken = (markers[id]._glideToken || 0) + 1;
       map.removeLayer(markers[id]);
       delete markers[id];
     }
@@ -220,29 +274,26 @@ function setPeople(list) {
   }
 }
 function iconFor(person) {
-  var badges = pinBadges(person);
-  if (person.icon && !person.silent && !person.gpsOff) {
-    return L.icon({
-      iconUrl: person.icon,
-      iconSize: [42, 42],
-      iconAnchor: [21, 42],
-      className: 'pin-icon'
-    });
-  }
   var face;
   if (person.icon) {
-    face = '<img src="' + person.icon + '" style="width:42px;height:42px;border-radius:21px;object-fit:cover;border:2px solid #1A1916;background:#F4F1EA;display:block">';
+    face = '<img alt="" src="' + person.icon + '" style="width:40px;height:40px;border-radius:20px;object-fit:cover;display:block;background:#F4F1EA">';
   } else if (person.waitImage) {
-    face = '<div style="width:36px;height:36px;border-radius:18px;background:transparent;border:2px solid rgba(26,25,22,0.28)"></div>';
+    face = '<div style="width:40px;height:40px;border-radius:20px;background:#E7E2D6"></div>';
   } else {
-    face = '<div style="width:36px;height:36px;border-radius:18px;background:#C8102E;color:#fff;text-align:center;line-height:36px;font-weight:700;border:2px solid #1A1916">' +
-      (person.letter || '?') + '</div>';
+    face = '<div style="width:40px;height:40px;border-radius:20px;background:#C8102E;color:#fff;text-align:center;line-height:40px;font-weight:700;font-size:18px">' +
+      escapeHtml(person.letter || '?') + '</div>';
   }
+  var html = '<div style="position:relative;width:48px;height:56px">'
+    + '<div style="width:44px;height:44px;margin:0 auto;border-radius:22px;background:#fff;box-shadow:0 1px 4px rgba(26,25,22,.35);display:flex;align-items:center;justify-content:center">'
+    + face + '</div>'
+    + '<div style="width:0;height:0;margin:-1px auto 0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:12px solid #fff;filter:drop-shadow(0 1px 1px rgba(26,25,22,.35))"></div>'
+    + pinBadges(person)
+    + '</div>';
   return L.divIcon({
     className: '',
-    html: '<div style="position:relative;width:42px;height:48px">' + face + badges + '</div>',
-    iconSize: [42, 56],
-    iconAnchor: [21, 52]
+    html: html,
+    iconSize: [48, 56],
+    iconAnchor: [24, 55]
   });
 }
 
