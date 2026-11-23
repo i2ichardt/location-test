@@ -59,6 +59,60 @@
         android:textColor="#1A1916"
         android:textSize="13sp" />
 
+    <LinearLayout
+        android:id="@+id/navBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_marginLeft="12dp"
+        android:layout_marginTop="64dp"
+        android:layout_marginRight="12dp"
+        android:background="@drawable/card_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingLeft="14dp"
+        android:paddingTop="10dp"
+        android:paddingRight="10dp"
+        android:paddingBottom="10dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/navTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#1C1B19"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/navDetail"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="2dp"
+                android:textColor="#5C584F"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/navEnd"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginLeft="8dp"
+            android:background="@drawable/pill_light"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:stateListAnimator="@null"
+            android:text="End"
+            android:textAllCaps="false"
+            android:textColor="#1C1B19" />
+    </LinearLayout>
+
     <com.family.locationtest.SwipeCard
         android:id="@+id/personCard"
         android:layout_width="match_parent"

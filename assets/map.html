@@ -343,6 +343,40 @@ function fitGroup() {
   if (pts.length === 1) map.setView(pts[0], 15);
   else map.fitBounds(pts, { paddingTopLeft: [28, 72], paddingBottomRight: [28, 120], maxZoom: 16 });
 }
+var routeLine = null;
+var meMark = null;
+function setRoute(coords) {
+  if (routeLine) map.removeLayer(routeLine);
+  routeLine = L.polyline(coords, { color: '#1D4E89', weight: 6, opacity: 0.92 }).addTo(map);
+  if (coords && coords.length) {
+    focused = true;
+    map.fitBounds(routeLine.getBounds(), { paddingTopLeft: [28, 150], paddingBottomRight: [28, 80] });
+  }
+}
+function clearRoute() {
+  if (routeLine) map.removeLayer(routeLine);
+  routeLine = null;
+  if (meMark) map.removeLayer(meMark);
+  meMark = null;
+}
+function showMe(lat, lon, follow) {
+  if (!meMark) {
+    meMark = L.circleMarker([lat, lon], {
+      radius: 8,
+      color: '#F7F4EE',
+      weight: 3,
+      fillColor: '#1D4E89',
+      fillOpacity: 1
+    }).addTo(map);
+  } else {
+    meMark.setLatLng([lat, lon]);
+  }
+  if (follow) {
+    focused = true;
+    if (map.getZoom() < 15) map.setView([lat, lon], 16);
+    else map.panTo([lat, lon], { animate: true });
+  }
+}
 </script>
 </body>
 </html>

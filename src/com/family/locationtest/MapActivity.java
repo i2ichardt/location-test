@@ -11,11 +11,15 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.speech.tts.TextToSpeech;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
@@ -30,11 +34,17 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.text.DateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -70,6 +80,41 @@ public class MapActivity extends Activity {
     private final HashMap<String, Bitmap> faces = new HashMap<String, Bitmap>();
     private final HashMap<String, Long> faceStamps = new HashMap<String, Long>();
     private final GroupWatch watch = new GroupWatch();
+    private LinearLayout navBanner;
+    private TextView navTitle;
+    private TextView navDetail;
+    private boolean navigating;
+    private int navToken;
+    private double navDestLat;
+    private double navDestLon;
+    private String navDestName = "";
+    private int navStep;
+    private long navRerouteAt;
+    private String navSpoken = "";
+    private TextToSpeech voice;
+    private boolean voiceReady;
+    private final List<NavStep> navSteps = new ArrayList<NavStep>();
+    private final List<double[]> navLine = new ArrayList<double[]>();
+    private final LocationListener navListener = new LocationListener() {
+        @Override
+        public void onLocationChanged(Location location) {
+            if (!navigating || location == null) return;
+            Prefs.saveFix(MapActivity.this, location.getLatitude(), location.getLongitude());
+            onNavFix(location.getLatitude(), location.getLongitude());
+        }
+
+        @Override
+        public void onStatusChanged(String provider, int status, Bundle extras) {
+        }
+
+        @Override
+        public void onProviderEnabled(String provider) {
+        }
+
+        @Override
+        public void onProviderDisabled(String provider) {
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -84,6 +129,15 @@ public class MapActivity extends Activity {
         cardName = findViewById(R.id.cardName);
         cardArrived = findViewById(R.id.cardArrived);
         cardStay = findViewById(R.id.cardStay);
+        navBanner = findViewById(R.id.navBanner);
+        navTitle = findViewById(R.id.navTitle);
+        navDetail = findViewById(R.id.navDetail);
+        findViewById(R.id.navEnd).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                stopNavigation();
+            }
+        });
 
         map.getSettings().setJavaScriptEnabled(true);
         map.getSettings().setDomStorageEnabled(true);
@@ -198,14 +252,23 @@ public class MapActivity extends Activity {
                 });
             }
         });
+        if (navigating) resumeNavigationGps();
     }
 
     @Override
     protected void onPause() {
         Presence.mapOpen = false;
         watch.stop();
+        pauseNavigationGps();
         if (hasLocation()) ShareService.start(this);
         super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        stopNavigation();
+        if (voice != null) voice.shutdown();
+        super.onDestroy();
     }
 
     private void askPermissions() {
@@ -654,7 +717,7 @@ public class MapActivity extends Activity {
         if (hasLoc) actions.addView(wideButton("Directions", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                openTrip(lat, lon, member.optString("name", ""));
+                startNavigation(lat, lon, member.optString("name", ""));
             }
         }));
         actions.addView(wideButton("Call", new View.OnClickListener() {
@@ -712,41 +775,298 @@ public class MapActivity extends Activity {
         startActivity(new Intent(Intent.ACTION_VIEW, uri));
     }
 
-    private void openTrip(double lat, double lon, String name) {
-        if (openOsmand("net.osmand.plus", lat, lon, name)) return;
-        if (openOsmand("net.osmand", lat, lon, name)) return;
-        Toast.makeText(this, "Install OsmAnd to get directions", Toast.LENGTH_LONG).show();
+    private void startNavigation(double lat, double lon, String name) {
+        if (!Prefs.hasFix(this)) {
+            Toast.makeText(this, "Still waiting for this phone's location", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        double fromLat = Prefs.lat(this);
+        double fromLon = Prefs.lon(this);
+        if (meters(fromLat, fromLon, lat, lon) < 40) {
+            Toast.makeText(this, "You're already there", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        navigating = true;
+        navDestLat = lat;
+        navDestLon = lon;
+        navDestName = name == null || name.trim().isEmpty() ? "your stop" : name.trim();
+        navStep = 0;
+        navSpoken = "";
+        navSteps.clear();
+        navLine.clear();
+        navBanner.setVisibility(View.VISIBLE);
+        navTitle.setText("Finding the road");
+        navDetail.setText("to " + navDestName);
+        hidePersonCard();
+        sheetOpen = false;
+        slideCurtain(curtainClosed, 180);
+        ensureVoice();
+        resumeNavigationGps();
+        fetchRoute(fromLat, fromLon, ++navToken);
+    }
+
+    private void stopNavigation() {
+        navigating = false;
+        navToken++;
+        navSteps.clear();
+        navLine.clear();
+        navSpoken = "";
+        pauseNavigationGps();
+        if (navBanner != null) navBanner.setVisibility(View.GONE);
+        if (pageReady) map.evaluateJavascript("clearRoute()", null);
+    }
+
+    private void resumeNavigationGps() {
+        if (!navigating || !hasLocation()) return;
         try {
-            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=net.osmand")));
-        } catch (Exception e) {
-            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://osmand.net")));
+            LocationManager locations = (LocationManager) getSystemService(LOCATION_SERVICE);
+            String provider = locations.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                    ? LocationManager.GPS_PROVIDER
+                    : LocationManager.NETWORK_PROVIDER;
+            if (!locations.isProviderEnabled(provider)) return;
+            locations.requestLocationUpdates(provider, 2000L, 4f, navListener, Looper.getMainLooper());
+            Location last = locations.getLastKnownLocation(provider);
+            if (last != null) onNavFix(last.getLatitude(), last.getLongitude());
+        } catch (Exception ignored) {
         }
     }
 
-    private boolean openOsmand(String pkg, double lat, double lon, String name) {
-        String who = name == null ? "" : name.trim();
-        if (who.isEmpty()) who = "Family";
-        Uri.Builder uri = new Uri.Builder()
-                .scheme("osmand.api")
-                .authority("navigate")
-                .appendQueryParameter("dest_lat", String.valueOf(lat))
-                .appendQueryParameter("dest_lon", String.valueOf(lon))
-                .appendQueryParameter("dest_name", who)
-                .appendQueryParameter("profile", "car")
-                .appendQueryParameter("force", "true");
-        if (Prefs.hasFix(this)) {
-            uri.appendQueryParameter("start_lat", String.valueOf(Prefs.lat(this)));
-            uri.appendQueryParameter("start_lon", String.valueOf(Prefs.lon(this)));
-            uri.appendQueryParameter("start_name", "You");
-        }
-        Intent intent = new Intent(Intent.ACTION_VIEW, uri.build());
-        intent.setPackage(pkg);
+    private void pauseNavigationGps() {
         try {
-            startActivity(intent);
-            return true;
-        } catch (Exception e) {
-            return false;
+            LocationManager locations = (LocationManager) getSystemService(LOCATION_SERVICE);
+            locations.removeUpdates(navListener);
+        } catch (Exception ignored) {
         }
+    }
+
+    private void fetchRoute(final double fromLat, final double fromLon, final int token) {
+        final double toLat = navDestLat;
+        final double toLon = navDestLon;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    String url = String.format(Locale.US,
+                            "https://router.project-osrm.org/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&steps=true",
+                            fromLon, fromLat, toLon, toLat);
+                    String body = httpGet(url);
+                    final JSONObject root = new JSONObject(body);
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (!navigating || token != navToken) return;
+                            applyRoute(root);
+                        }
+                    });
+                } catch (final Exception e) {
+                    handler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (!navigating || token != navToken) return;
+                            navTitle.setText("No route");
+                            navDetail.setText("A data connection is needed to find the roads");
+                        }
+                    });
+                }
+            }
+        }).start();
+    }
+
+    private void applyRoute(JSONObject root) {
+        navSteps.clear();
+        navLine.clear();
+        JSONArray routes = root.optJSONArray("routes");
+        if (routes == null || routes.length() == 0) {
+            navTitle.setText("No route");
+            navDetail.setText("No driving road to " + navDestName);
+            return;
+        }
+        JSONObject route = routes.optJSONObject(0);
+        JSONObject geometry = route == null ? null : route.optJSONObject("geometry");
+        JSONArray coords = geometry == null ? null : geometry.optJSONArray("coordinates");
+        if (coords != null) {
+            int stride = coords.length() > 1500 ? coords.length() / 1500 : 1;
+            for (int i = 0; i < coords.length(); i += stride) {
+                JSONArray pair = coords.optJSONArray(i);
+                if (pair == null || pair.length() < 2) continue;
+                navLine.add(new double[] { pair.optDouble(1), pair.optDouble(0) });
+            }
+            JSONArray last = coords.optJSONArray(coords.length() - 1);
+            if (last != null && last.length() >= 2) {
+                double[] end = new double[] { last.optDouble(1), last.optDouble(0) };
+                if (navLine.isEmpty() || navLine.get(navLine.size() - 1)[0] != end[0]) navLine.add(end);
+            }
+        }
+        JSONArray legs = route == null ? null : route.optJSONArray("legs");
+        JSONObject leg = legs == null ? null : legs.optJSONObject(0);
+        JSONArray steps = leg == null ? null : leg.optJSONArray("steps");
+        if (steps != null) {
+            for (int i = 0; i < steps.length(); i++) {
+                JSONObject step = steps.optJSONObject(i);
+                if (step == null) continue;
+                JSONObject maneuver = step.optJSONObject("maneuver");
+                JSONArray at = maneuver == null ? null : maneuver.optJSONArray("location");
+                if (at == null || at.length() < 2) continue;
+                NavStep one = new NavStep();
+                one.lon = at.optDouble(0);
+                one.lat = at.optDouble(1);
+                one.distance = step.optDouble("distance", 0);
+                one.type = maneuver.optString("type", "");
+                one.modifier = maneuver.optString("modifier", "");
+                one.name = step.optString("name", "");
+                navSteps.add(one);
+            }
+        }
+        if (navLine.isEmpty() || navSteps.isEmpty()) {
+            navTitle.setText("No route");
+            navDetail.setText("No driving road to " + navDestName);
+            return;
+        }
+        navStep = 0;
+        navSpoken = "";
+        navRerouteAt = System.currentTimeMillis();
+        if (pageReady) {
+            StringBuilder js = new StringBuilder("setRoute([");
+            for (int i = 0; i < navLine.size(); i++) {
+                if (i > 0) js.append(',');
+                js.append(String.format(Locale.US, "[%.5f,%.5f]", navLine.get(i)[0], navLine.get(i)[1]));
+            }
+            js.append("])");
+            map.evaluateJavascript(js.toString(), null);
+        }
+        if (Prefs.hasFix(this)) onNavFix(Prefs.lat(this), Prefs.lon(this));
+    }
+
+    private void onNavFix(double lat, double lon) {
+        if (!navigating || navSteps.isEmpty()) return;
+        if (pageReady) {
+            map.evaluateJavascript(String.format(Locale.US, "showMe(%.6f,%.6f,true)", lat, lon), null);
+        }
+        while (navStep + 1 < navSteps.size() - 1 && meters(lat, lon, navSteps.get(navStep + 1).lat, navSteps.get(navStep + 1).lon) < 35) {
+            navStep++;
+        }
+        for (int i = navStep + 1; i < navSteps.size(); i++) {
+            if (meters(lat, lon, navSteps.get(i).lat, navSteps.get(i).lon) < 28) navStep = Math.min(i, navSteps.size() - 1);
+        }
+        boolean last = navStep >= navSteps.size() - 1;
+        NavStep here = navSteps.get(navStep);
+        NavStep upcoming = last ? here : navSteps.get(navStep + 1);
+        double remain = meters(lat, lon, upcoming.lat, upcoming.lon);
+        if ("arrive".equals(upcoming.type) && remain < 45) last = true;
+        if (last) {
+            navTitle.setText("You've arrived");
+            navDetail.setText(navDestName);
+            speakOnce("arrive", "You have arrived");
+            return;
+        }
+        navTitle.setText(maneuverTitle(upcoming));
+        String road = upcoming.name == null ? "" : upcoming.name.trim();
+        String onto = road.isEmpty() ? "" : "onto " + road;
+        navDetail.setText((onto.isEmpty() ? "" : onto + " · ") + distancePhrase(remain));
+        String say = maneuverTitle(upcoming) + (road.isEmpty() ? "" : " onto " + road);
+        if (remain < 180) speakOnce("soon-" + navStep, say);
+        else speakOnce("step-" + navStep, "In " + distancePhrase(remain) + ", " + say);
+
+        long now = System.currentTimeMillis();
+        if (nearestRoute(lat, lon) > 80 && now - navRerouteAt > 20000) {
+            navRerouteAt = now;
+            navTitle.setText("Recalculating");
+            navDetail.setText("You left the route");
+            fetchRoute(lat, lon, ++navToken);
+        }
+    }
+
+    private String maneuverTitle(NavStep step) {
+        String type = step.type == null ? "" : step.type;
+        String mod = step.modifier == null ? "" : step.modifier;
+        if ("arrive".equals(type)) return "Arrive";
+        if ("depart".equals(type)) return "Head out";
+        if ("roundabout".equals(type) || "rotary".equals(type)) return "Enter the roundabout";
+        if ("merge".equals(type)) return "Merge";
+        if ("fork".equals(type)) return "Keep " + side(mod);
+        if ("uturn".equals(mod)) return "Make a U-turn";
+        if ("turn".equals(type) || "end of road".equals(type)) return "Turn " + side(mod);
+        if ("slight right".equals(mod) || "slight left".equals(mod)) return "Bear " + side(mod);
+        if ("sharp right".equals(mod) || "sharp left".equals(mod)) return "Turn sharp " + side(mod);
+        if ("right".equals(mod) || "left".equals(mod)) return "Turn " + side(mod);
+        return "Continue";
+    }
+
+    private String side(String modifier) {
+        if (modifier == null) return "";
+        if (modifier.endsWith("right")) return "right";
+        if (modifier.endsWith("left")) return "left";
+        if ("straight".equals(modifier)) return "straight";
+        return modifier;
+    }
+
+    private String distancePhrase(double meters) {
+        double feet = meters * 3.28084;
+        if (feet < 600) return ((int) (Math.max(50, Math.round(feet / 50.0) * 50))) + " ft";
+        double miles = meters / 1609.344;
+        if (miles < 10) return String.format(Locale.US, "%.1f mi", miles);
+        return ((int) Math.round(miles)) + " mi";
+    }
+
+    private void speakOnce(String key, String text) {
+        if (key.equals(navSpoken) || text == null || text.trim().isEmpty()) return;
+        navSpoken = key;
+        if (!voiceReady || voice == null) return;
+        voice.speak(text, TextToSpeech.QUEUE_FLUSH, null, "nav");
+    }
+
+    private void ensureVoice() {
+        if (voice != null) return;
+        voice = new TextToSpeech(this, new TextToSpeech.OnInitListener() {
+            @Override
+            public void onInit(int status) {
+                voiceReady = status == TextToSpeech.SUCCESS;
+                if (voiceReady) voice.setLanguage(Locale.US);
+            }
+        });
+    }
+
+    private double nearestRoute(double lat, double lon) {
+        double best = 1e12;
+        for (int i = 0; i < navLine.size(); i++) {
+            double d = meters(lat, lon, navLine.get(i)[0], navLine.get(i)[1]);
+            if (d < best) best = d;
+        }
+        return best;
+    }
+
+    private static double meters(double lat1, double lon1, double lat2, double lon2) {
+        double r = 6371000.0;
+        double p1 = Math.toRadians(lat1);
+        double p2 = Math.toRadians(lat2);
+        double dp = Math.toRadians(lat2 - lat1);
+        double dl = Math.toRadians(lon2 - lon1);
+        double x = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+        return 2 * r * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+    }
+
+    private static String httpGet(String url) throws Exception {
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        conn.setConnectTimeout(10000);
+        conn.setReadTimeout(15000);
+        conn.setRequestProperty("User-Agent", "FamilyLocation/2.15");
+        InputStream in = conn.getInputStream();
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        byte[] tmp = new byte[4096];
+        int n;
+        while ((n = in.read(tmp)) >= 0) buf.write(tmp, 0, n);
+        in.close();
+        conn.disconnect();
+        return buf.toString("UTF-8");
+    }
+
+    private static class NavStep {
+        double lat;
+        double lon;
+        double distance;
+        String type;
+        String modifier;
+        String name;
     }
 
     private void openPerson(String userId) {
@@ -1241,7 +1561,7 @@ public class MapActivity extends Activity {
         findViewById(R.id.cardView).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (hasLoc) openTrip(lat, lon, member.optString("name", ""));
+                if (hasLoc) startNavigation(lat, lon, member.optString("name", ""));
             }
         });
         findViewById(R.id.cardCall).setOnClickListener(new View.OnClickListener() {
