@@ -29,6 +29,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.text.DateFormat;
@@ -714,30 +715,31 @@ public class MapActivity extends Activity {
     private void openTrip(double lat, double lon, String name) {
         if (openOsmand("net.osmand.plus", lat, lon, name)) return;
         if (openOsmand("net.osmand", lat, lon, name)) return;
-        Uri nav = Uri.parse("google.navigation:q=" + lat + "," + lon);
-        Intent intent = new Intent(Intent.ACTION_VIEW, nav);
-        intent.setPackage("com.google.android.apps.maps");
+        Toast.makeText(this, "Install OsmAnd to get directions", Toast.LENGTH_LONG).show();
         try {
-            startActivity(intent);
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=net.osmand")));
         } catch (Exception e) {
-            Uri web = Uri.parse("https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lon);
-            startActivity(new Intent(Intent.ACTION_VIEW, web));
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://osmand.net")));
         }
     }
 
     private boolean openOsmand(String pkg, double lat, double lon, String name) {
         String who = name == null ? "" : name.trim();
         if (who.isEmpty()) who = "Family";
-        Uri uri = new Uri.Builder()
+        Uri.Builder uri = new Uri.Builder()
                 .scheme("osmand.api")
                 .authority("navigate")
                 .appendQueryParameter("dest_lat", String.valueOf(lat))
                 .appendQueryParameter("dest_lon", String.valueOf(lon))
                 .appendQueryParameter("dest_name", who)
                 .appendQueryParameter("profile", "car")
-                .appendQueryParameter("force", "true")
-                .build();
-        Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+                .appendQueryParameter("force", "true");
+        if (Prefs.hasFix(this)) {
+            uri.appendQueryParameter("start_lat", String.valueOf(Prefs.lat(this)));
+            uri.appendQueryParameter("start_lon", String.valueOf(Prefs.lon(this)));
+            uri.appendQueryParameter("start_name", "You");
+        }
+        Intent intent = new Intent(Intent.ACTION_VIEW, uri.build());
         intent.setPackage(pkg);
         try {
             startActivity(intent);

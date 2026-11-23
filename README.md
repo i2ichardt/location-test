@@ -6,9 +6,9 @@ The Windows server is [family-location-server](https://github.com/i2ichardt/fami
 
 ## Download
 
-The compiled app is [Family 2.13](https://github.com/i2ichardt/location-test/releases/tag/v2.13).
+The compiled app is [Family 2.14](https://github.com/i2ichardt/location-test/releases/tag/v2.14).
 
-[Download LocationTest.apk](https://github.com/i2ichardt/location-test/releases/download/v2.13/LocationTest.apk)
+[Download LocationTest.apk](https://github.com/i2ichardt/location-test/releases/download/v2.14/LocationTest.apk)
 
 The installed app is named **Family**. Allow installs from the browser if Android asks. Allow location when it asks.
 
@@ -37,7 +37,7 @@ The map is the home screen. Pull the People handle to slide the list up, and lea
 
 Each person is a white circle with a small arrow on the exact spot. The panel shows battery, signal, a green or red location icon, Wi-Fi when they are on Wi-Fi, and a connection icon. If the server cannot reach them, the panel says when the last response came in and a likely reason. It also shows how often their phone is set to update.
 
-Street View, Call, and Text use the Google Maps app and the phone dialer. Directions starts turn-by-turn navigation in OsmAnd when that app is installed, and uses Google Maps otherwise. Call starts the call. Satellite or street map is remembered the next time you open the app.
+Street View, Call, and Text use the phone. Directions starts turn-by-turn navigation in OsmAnd, from your last location to that person. If OsmAnd is not installed, the app sends you to install it. Call starts the call. Satellite or street map is remembered the next time you open the app.
 
 Saved places are shared. Arrive and leave alerts are chosen on each phone. A fix that jumps while the phone is still on that place’s Wi-Fi is dropped. The sharing notification says that swiping it away stops sharing your location.
 
