@@ -653,7 +653,7 @@ public class MapActivity extends Activity {
         if (hasLoc) actions.addView(wideButton("Directions", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                openTrip(lat, lon);
+                openTrip(lat, lon, member.optString("name", ""));
             }
         }));
         actions.addView(wideButton("Call", new View.OnClickListener() {
@@ -711,7 +711,9 @@ public class MapActivity extends Activity {
         startActivity(new Intent(Intent.ACTION_VIEW, uri));
     }
 
-    private void openTrip(double lat, double lon) {
+    private void openTrip(double lat, double lon, String name) {
+        if (openOsmand("net.osmand.plus", lat, lon, name)) return;
+        if (openOsmand("net.osmand", lat, lon, name)) return;
         Uri nav = Uri.parse("google.navigation:q=" + lat + "," + lon);
         Intent intent = new Intent(Intent.ACTION_VIEW, nav);
         intent.setPackage("com.google.android.apps.maps");
@@ -720,6 +722,28 @@ public class MapActivity extends Activity {
         } catch (Exception e) {
             Uri web = Uri.parse("https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lon);
             startActivity(new Intent(Intent.ACTION_VIEW, web));
+        }
+    }
+
+    private boolean openOsmand(String pkg, double lat, double lon, String name) {
+        String who = name == null ? "" : name.trim();
+        if (who.isEmpty()) who = "Family";
+        Uri uri = new Uri.Builder()
+                .scheme("osmand.api")
+                .authority("navigate")
+                .appendQueryParameter("dest_lat", String.valueOf(lat))
+                .appendQueryParameter("dest_lon", String.valueOf(lon))
+                .appendQueryParameter("dest_name", who)
+                .appendQueryParameter("profile", "car")
+                .appendQueryParameter("force", "true")
+                .build();
+        Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+        intent.setPackage(pkg);
+        try {
+            startActivity(intent);
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 
@@ -1215,7 +1239,7 @@ public class MapActivity extends Activity {
         findViewById(R.id.cardView).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (hasLoc) openTrip(lat, lon);
+                if (hasLoc) openTrip(lat, lon, member.optString("name", ""));
             }
         });
         findViewById(R.id.cardCall).setOnClickListener(new View.OnClickListener() {
