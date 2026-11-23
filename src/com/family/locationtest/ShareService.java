@@ -202,7 +202,7 @@ public class ShareService extends Service {
         }
         boolean stoppedOnly = Prefs.onlyStopped(this);
         boolean isMoving = location.hasSpeed() && location.getSpeed() > 0.8f;
-        boolean faster = highway(location) || (Prefs.chargeFast(this) && isCharging());
+        boolean faster = highway(location) || (Prefs.chargeFast(this) && isCharging() && !onSavedPlaceWifi());
         if (stoppedOnly && isMoving && !faster) {
             moving = true;
             return;
@@ -213,6 +213,10 @@ public class ShareService extends Service {
         boolean justStopped = stoppedOnly && moving;
         if (!justStopped && !due) return;
         moving = false;
+        if (location.hasAccuracy() && location.getAccuracy() > 100f) {
+            if (postAlive()) lastSend = now;
+            return;
+        }
         if (postLocation(location)) lastSend = now;
     }
 
@@ -226,7 +230,7 @@ public class ShareService extends Service {
 
     private long sendWait() {
         long wait = paceWait();
-        if (Prefs.chargeFast(this) && isCharging()) {
+        if (Prefs.chargeFast(this) && isCharging() && !onSavedPlaceWifi()) {
             long charge = Prefs.chargeSeconds(this) * 1000L;
             if (charge < 5000L) charge = 5000L;
             if (charge < wait) wait = charge;
@@ -242,6 +246,13 @@ public class ShareService extends Service {
             return Math.min(sendWait(), 15000L);
         }
         return sendWait();
+    }
+
+    private boolean onSavedPlaceWifi() {
+        String ssid = wifiSsid(this);
+        if (ssid.isEmpty()) return false;
+        String place = Prefs.placeSsid(this);
+        return !place.isEmpty() && ssid.equals(place);
     }
 
     private boolean highway(Location location) {
@@ -297,7 +308,7 @@ public class ShareService extends Service {
     }
 
     private long fetchWait() {
-        if (highway(lastFix) || (Prefs.chargeFast(this) && isCharging())) return Math.min(sendWait(), 15000L);
+        if (highway(lastFix) || (Prefs.chargeFast(this) && isCharging() && !onSavedPlaceWifi())) return Math.min(sendWait(), 15000L);
         if ("custom".equals(Prefs.pace(this))) return Prefs.customMillis(this);
         if (Presence.mapOpen) return 15000L;
         return Prefs.fast(this) ? 120000L : 900000L;
@@ -732,16 +743,11 @@ public class ShareService extends Service {
     private void goForeground(String text) {
         boolean off = text != null && text.startsWith("Location is off");
         String group = Prefs.group(this);
-        String body = off
-                ? "Location is off. Swipe this away to stop sharing your location."
-                : "Sharing with " + group + ". Swipe this away to stop sharing your location.";
+        String body = off ? "Location is off." : "Sharing with " + group + ".";
         Intent open = new Intent(this, MapActivity.class);
-        Intent stop = new Intent(this, ShareService.class);
-        stop.setAction(ACTION_STOP);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
         PendingIntent pending = PendingIntent.getActivity(this, 0, open, flags);
-        PendingIntent delete = PendingIntent.getService(this, 2, stop, flags);
         Notification.Builder builder = Build.VERSION.SDK_INT >= 26
                 ? new Notification.Builder(this, CH_SHARE)
                 : new Notification.Builder(this);
@@ -749,10 +755,10 @@ public class ShareService extends Service {
                 .setContentTitle("Family")
                 .setContentText(body)
                 .setStyle(new Notification.BigTextStyle().bigText(body))
-                .setOngoing(false)
-                .setDeleteIntent(delete)
+                .setOngoing(true)
                 .setContentIntent(pending);
         Notification note = builder.build();
+        note.flags |= Notification.FLAG_ONGOING_EVENT | Notification.FLAG_NO_CLEAR;
         if (Build.VERSION.SDK_INT >= 29) {
             startForeground(NOTE_ID, note, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
         } else {

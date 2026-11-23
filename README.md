@@ -6,9 +6,9 @@ The Windows server is [family-location-server](https://github.com/i2ichardt/fami
 
 ## Download
 
-The compiled app is [Family 2.15](https://github.com/i2ichardt/location-test/releases/tag/v2.15).
+The compiled app is [Family 2.16](https://github.com/i2ichardt/location-test/releases/tag/v2.16).
 
-[Download LocationTest.apk](https://github.com/i2ichardt/location-test/releases/download/v2.15/LocationTest.apk)
+[Download LocationTest.apk](https://github.com/i2ichardt/location-test/releases/download/v2.16/LocationTest.apk)
 
 The installed app is named **Family**. Allow installs from the browser if Android asks. Allow location when it asks.
 
@@ -36,6 +36,8 @@ Tailscale encrypts the tunnel. This server does not. It has no password and no H
 The map is the home screen. Pull the People handle to slide the list up, and leave it at any height. Tap the handle or the title to open or close it all the way. The list scrolls. Swipe a person’s card sideways to close it.
 
 Each person is a white circle with a small arrow on the exact spot. The panel shows battery, signal, a green or red location icon, Wi-Fi when they are on Wi-Fi, and a connection icon. If the server cannot reach them, the panel says when the last response came in and a likely reason. It also shows how often their phone is set to update.
+
+The sharing notification stays put. Swiping notifications does not stop sharing. Sharing stops from Settings, or if the app is force-stopped. Place alerts can still be cleared.
 
 Street View, Call, and Text use the phone. Directions stays in Family. It draws the driving route on the map, speaks the turns, and follows this phone along the road. It needs a data connection to look up the roads. Call starts the call. Satellite or street map is remembered the next time you open the app.
 

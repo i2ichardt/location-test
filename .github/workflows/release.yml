@@ -17,4 +17,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             LocationTest.apk \
             --title "Family ${GITHUB_REF_NAME#v}" \
-            --notes "Family 2.15. Directions stays in the app. It draws the driving route, speaks the turns, and follows the phone. A data connection is needed to look up the roads."
+            --notes "Family 2.16. People panels match the new layout. A lost phone shows Lost Connection. The sharing notification stays pinned. One bad jump no longer counts as leaving."
